@@ -1,0 +1,5 @@
+# Ignore the secrets directory
+secrets/
+
+# Ignore environment files containing variables and passwords
+**/.env

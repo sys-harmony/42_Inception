@@ -3,7 +3,7 @@ COMPOSE_FILE = srcs/docker-compose.yml
 
 .PHONY: all build up down clean fclean re
 
-all: build up
+all: up
 
 # Create local storage directories and build images
 build:
@@ -11,14 +11,17 @@ build:
 	docker compose -f $(COMPOSE_FILE) build
 
 # Start containers in detached mode
-up:
+up: build
 	docker compose -f $(COMPOSE_FILE) up -d
 
 # Stop running containers
 down:
 	docker compose -f $(COMPOSE_FILE) down
 
-# Remove containers and networks (keeps your data safe!)
+mariadb:
+	docker exec -it mariadb mysql -u root -p
+
+# Remove containers and networks
 clean: down
 	@docker system prune -f
 

@@ -174,18 +174,19 @@ Host inception
     Port 2222
 ```
 
-4. In VSCode, click the green `><` icon (bottom-left) -> **Connect to Host...** -> **inception**.
-5. Once connected, click **Open Folder** and select `/home/<yourlogin>`.
+4. In VSCode, click the `><` icon (bottom-left) -> **Connect to Host...** -> **inception**.
+5. A new VSCode window will open and you will then be prompted to enter your password (the one for the "yourlogin" user).
+6. Once connected, go to the VSCode file explorer (on the left), click **Open Folder**, then select `/home/<yourlogin>` and confirm.
 
 To avoid VSCode asking for your password too oftenm you can set up an SSH key. If you already have one, skip to the next step.
 
 Be careful: generating a new SSH key can overwrite an existing one if you are not attentive to the file location, so make sure you know what you are doing before proceeding. If you don’t have an SSH key yet, you first need to create one. In your physical computer’s terminal (not the VM), run:
 
-```
+```bash
 ssh-keygen -t rsa -b 4096
 ```
 
-Once the key is ready (or if you already have one) send it to your virtual machine using the following command:
+Press Enter for all prompts to accept the default options and do not set a passphrase for the key. Then, once the key is created (or if you already had one), send it to your virtual machine using the following command:
 
 **For Bridged Mode:**
 ```
@@ -201,7 +202,9 @@ ssh-copy-id -p 2222 yourlogin@localhost
 
 ### 6. Local Domain DNS Routing
 
-Map your domain name to your VM so requests resolve correctly. Open your host's `/etc/hosts` file (with `sudo`):
+We will also need to modify the `/etc/hosts` file so that your domain name (`yourlogin.42.fr`) correctly resolves to your virtual machine. This allows your system to redirect requests for the domain to the right IP address, whether you are using a browser or tools like VSCode and SSH. 
+
+Open your host's `/etc/hosts` file (with `sudo`):
 ```bash
 sudo nano /etc/hosts
 ```
@@ -226,15 +229,25 @@ Add the following line based on your mode:
 
 Open the VSCode integrated terminal (`Ctrl+J`) directly inside the VM and install Docker using the official repository:
 
+Add Docker's official GPG key:
 ```bash
-# Add Docker's official GPG key:
-sudo apt update
-sudo apt install ca-certificates curl
-sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
+sudo apt update && sudo apt install ca-certificates curl
+```
 
-# Add the repository to Apt sources:
+```bash
+sudo install -m 0755 -d /etc/apt/keyrings
+```
+
+```bash
+sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+```
+
+```bash
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+```
+
+Add the repository to Apt sources:
+```bash
 sudo tee /etc/apt/sources.list.d/docker.sources <<EOF
 Types: deb
 URIs: https://download.docker.com/linux/debian
@@ -243,10 +256,11 @@ Components: stable
 Architectures: \$(dpkg --print-architecture)
 Signed-By: /etc/apt/keyrings/docker.asc
 EOF
+```
 
-# Install Docker:
-sudo apt update
-sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+Install Docker:
+```bash
+sudo apt update && sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 
 Verify installation: `sudo systemctl status docker` and `docker compose version`.
@@ -257,37 +271,40 @@ sudo usermod -aG docker yourlogin
 ```
 *(You may need to log out and log back in for this to take effect.)*
 
+[Source : https://docs.docker.com/engine/install/debian/#install-using-the-repository](https://docs.docker.com/engine/install/debian/#install-using-the-repository)
+
 ---
 
 ### 8. Project Structure & Environment
 
+We will now create the project directory structure. Be careful: the subject specifies a mandatory `srcs` directory, but it does not explicitly state that it must be located at the root of the project. In practice, we place `srcs` inside another directory (here, `inception`), because otherwise your home directory (`/home/yourlogin`) would have to be your Git repository, which is neither practical nor recommended.
+
 Create the necessary folders:
+
 ```bash
-cd ~
-mkdir -p inception/srcs/requirements/mariadb/tools
-mkdir -p inception/srcs/requirements/nginx/conf
-mkdir -p inception/srcs/requirements/nginx/tools
-mkdir -p inception/srcs/requirements/wordpress/tools
-mkdir -p inception/srcs/requirements/tools
-mkdir -p inception/secrets
+mkdir -p \
+    ~/inception/srcs/requirements/mariadb/tools \
+    ~/inception/srcs/requirements/nginx/conf \
+    ~/inception/srcs/requirements/nginx/tools \
+    ~/inception/srcs/requirements/wordpress/tools \
+    ~/inception/srcs/requirements/tools \
+    ~/inception/secrets
 ```
 
 Secure the repository by ignoring secrets and `.env`:
 ```bash
-cd ~/inception
-cat << 'EOF' > .gitignore
+cat << 'EOF' > ~/inception/.gitignore
 # Ignore the secrets directory
 secrets/
 
 # Ignore environment files
-**/.env
+.env
 EOF
 ```
 
-Create the `.env` file in `srcs`:
+Create the `.env` file in `srcs` and copy the following configuration into it - make sure to replace `yourlogin` with your actual 42 username in the lines below:
 ```bash
-cd ~/inception/srcs
-cat << 'EOF' > .env
+cat << 'EOF' > ~/inception/srcs/.env
 DOMAIN_NAME=yourlogin.42.fr
 # MYSQL SETUP
 MYSQL_USER=yourlogin
@@ -302,12 +319,25 @@ WP_USER_EMAIL=visitor@student.42.fr
 EOF
 ```
 
-Store passwords securely in `/secrets/`:
+While `.env` files are often used to store sensitive data, security best practices recommend keeping critical settings (i.e. passwords) into dedicated secret files. Replace the values in quotes with passwords of your choice securely in `~/inception/secrets/`:
+
 ```bash
 cd ~/inception/secrets
+```
+
+```bash
 echo "your_db_password" > db_password.txt
+```
+
+```bash
 echo "your_db_root_password" > db_root_password.txt
+```
+
+```bash
 echo "your_wp_admin_password" > wp_admin_password.txt
+```
+
+```bash
 echo "your_wp_user_password" > wp_user_password.txt
 ```
 
@@ -403,8 +433,16 @@ volumes:
       device: /home/yourlogin/data/wordpress
 ```
 
-Create `Makefile` (`~/inception/Makefile`):
-*(Make sure to use actual Tabs instead of spaces for indentation)*
+[Source: https://docs.docker.com/compose/gettingstarted/](https://docs.docker.com/compose/gettingstarted/)
+
+Now, create the `Makefile`:
+
+```bash
+touch ~/inception/Makefile
+```
+
+And copy the following into it and make sure to use actual Tabs instead of spaces for indentation:
+
 ```makefile
 DATA_PATH = /home/yourlogin/data
 COMPOSE_FILE = srcs/docker-compose.yml
@@ -443,6 +481,8 @@ fclean:
 re: fclean all
 ```
 
+[Source: https://docs.docker.com/compose/intro/compose-application-model/](https://docs.docker.com/compose/intro/compose-application-model/)
+
 ---
 
 ### 10. Dockerfiles & Entrypoint Scripts
@@ -450,7 +490,16 @@ re: fclean all
 The configuration files (`Dockerfile`, `entrypoint.sh`, `nginx.conf`, etc.) need to be written according to the tutorial provided previously. Follow the setup code to place each `Dockerfile` internally correctly:
 
 
-**MariaDB (`srcs/requirements/mariadb/Dockerfile`):**
+**MariaDB**
+
+Create the `Dockerfile`:
+
+```bash
+touch ~/inception/srcs/requirements/mariadb/Dockerfile
+```
+
+And copy the following in it:
+
 ```dockerfile
 # Use the stable Debian Bookworm as base image
 FROM debian:12
@@ -473,7 +522,16 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["mysqld", "--user=mysql", "--bind-address=0.0.0.0"]
 ```
 
-**WordPress (`srcs/requirements/wordpress/Dockerfile`):**
+**WordPress**
+
+Create the `Dockerfile`:
+
+```bash
+touch ~/inception/srcs/requirements/wordpress/Dockerfile
+```
+
+And copy the following in it:
+
 ```dockerfile
 # Use Debian Bookworm as the base image
 FROM debian:12
@@ -506,7 +564,16 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["php-fpm8.2", "-F"]
 ```
 
-**NGINX (`srcs/requirements/nginx/Dockerfile`):**
+**NGINX**
+
+Create the `Dockerfile`:
+
+```bash
+touch ~/inception/srcs/requirements/nginx/Dockerfile
+```
+
+And copy the following in it:
+
 ```dockerfile
 # Use Debian Bookworm as the base image
 FROM debian:12
@@ -528,7 +595,279 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["nginx", "-g", "daemon off;"]
 ```
 
-> **Note:** The `entrypoint.sh` scripts code (for initializing the Database securely, injecting WP-CLI configuration, and dynamically processing `__DOMAIN_NAME__` to provision self-signed certificates) must be placed in their matching `tools/entrypoint.sh` paths. (See full code setup).
+[Source: https://docs.docker.com/get-started/docker-concepts/building-images/writing-a-dockerfile/](https://docs.docker.com/get-started/docker-concepts/building-images/writing-a-dockerfile/)
+
+We now need to create the script that ensures that your MariaDB database is only configured once, handles security through secrets, and manages the process lifecycle correctly.
+
+**MariaDB**
+
+Create the `entrypoint.sh` script:
+
+```bash
+touch ~/inception/srcs/requirements/mariadb/tools/entrypoint.sh
+```
+
+And copy the following in it:
+
+```bash
+#!/bin/sh
+
+# Stop the script immediately if any command fails
+set -e
+
+# 1. Fetch secrets from Docker secret mount points
+MYSQL_ROOT_PASSWORD=$(cat /run/secrets/db_root_password)
+MYSQL_PASSWORD=$(cat /run/secrets/db_password)
+
+# 2. Fail-fast validation
+if [ -z "$MYSQL_ROOT_PASSWORD" ] || [ -z "$MYSQL_DATABASE" ] || [ -z "$MYSQL_USER" ] || [ -z "$MYSQL_PASSWORD" ]; then
+    echo "Error: Missing mandatory database environment variables or secrets." >&2
+    exit 1
+fi
+
+# 3. MariaDB Installation Logic
+if [ "$1" = 'mysqld' ]; then
+    # Marker file check to prevent re-initialization
+    if [ ! -f "/var/lib/mysql/.initialized" ]; then
+        echo "Initializing MariaDB database..."
+
+        chown -R mysql:mysql /var/lib/mysql
+        mysql_install_db --user=mysql --datadir=/var/lib/mysql > /dev/null
+
+        # Use bootstrap to configure users and database privileges
+        mysqld --user=mysql --datadir=/var/lib/mysql --bootstrap <<EOF
+FLUSH PRIVILEGES;
+ALTER USER 'root'@'localhost' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}';
+CREATE DATABASE IF NOT EXISTS ${MYSQL_DATABASE};
+CREATE USER IF NOT EXISTS '${MYSQL_USER}'@'%' IDENTIFIED BY '${MYSQL_PASSWORD}';
+GRANT ALL PRIVILEGES ON ${MYSQL_DATABASE}.* TO '${MYSQL_USER}'@'%';
+FLUSH PRIVILEGES;
+EOF
+        # Create the marker file to confirm success
+        touch /var/lib/mysql/.initialized
+        echo "MariaDB initialized successfully."
+    fi
+fi
+
+# 4. Execute the command from CMD (PID 1)
+exec "$@"
+```
+
+It's time to create the script that will setup WordPress.
+
+**WordPress**
+
+Create the `entrypoint.sh` script:
+
+```bash
+touch ~/inception/srcs/requirements/wordpress/tools/entrypoint.sh
+```
+
+And copy the following in it:
+
+```bash
+#!/bin/sh
+
+# Stop the script immediately if any command fails
+set -e
+
+# 1. Fetch secrets from Docker secret mount points
+MYSQL_PASSWORD=$(cat /run/secrets/db_password)
+WP_ADMIN_PASSWORD=$(cat /run/secrets/wp_admin_password)
+WP_USER_PASSWORD=$(cat /run/secrets/wp_user_password)
+
+# 2. Fail-fast validation
+# Database checks
+if [ -z "$MYSQL_HOSTNAME" ] || [ -z "$MYSQL_DATABASE" ] || [ -z "$MYSQL_USER" ] || [ -z "$MYSQL_PASSWORD" ]; then
+    echo "Error: Missing database environment variables or secrets." >&2
+    exit 1
+fi
+
+# Admin checks
+if [ -z "$WP_ADMIN_USER" ] || [ -z "$WP_ADMIN_PASSWORD" ] || [ -z "$WP_ADMIN_EMAIL" ]; then
+    echo "Error: Missing admin environment variables or secrets." >&2
+    exit 1
+fi
+
+# Site and Secondary User checks
+if [ -z "$DOMAIN_NAME" ] || [ -z "$WP_TITLE" ] || [ -z "$WP_USER" ] || [ -z "$WP_USER_PASSWORD" ] || [ -z "$WP_USER_EMAIL" ]; then
+    echo "Error: Missing site or secondary user environment variables." >&2
+    exit 1
+fi
+
+# 3. Wait for MariaDB to be ready
+echo "Waiting for MariaDB to be ready..."
+until mysql -h"$MYSQL_HOSTNAME" -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
+    sleep 2
+done
+
+# 4. WordPress Installation Logic
+if [ ! -f "/var/www/html/wp-config.php" ]; then
+    echo "WordPress not found. Starting installation..."
+
+    # Download WordPress core files
+    wp core download --allow-root
+
+    # Create wp-config.php dynamically
+    wp config create \
+        --dbname="$MYSQL_DATABASE" \
+        --dbuser="$MYSQL_USER" \
+        --dbpass="$MYSQL_PASSWORD" \
+        --dbhost="$MYSQL_HOSTNAME" \
+        --allow-root
+
+    # Install WordPress and set up the administrator account
+    wp core install \
+        --url="https://$DOMAIN_NAME" \
+        --title="$WP_TITLE" \
+        --admin_user="$WP_ADMIN_USER" \
+        --admin_password="$WP_ADMIN_PASSWORD" \
+        --admin_email="$WP_ADMIN_EMAIL" \
+        --skip-email \
+        --allow-root
+
+    # Create the mandatory secondary user
+    wp user create "$WP_USER" "$WP_USER_EMAIL" \
+        --role=author \
+        --user_pass="$WP_USER_PASSWORD" \
+        --allow-root
+
+    # Fix ownership and permissions for the web server user
+    chown -R www-data:www-data /var/www/html
+    chmod -R 755 /var/www/html
+    echo "WordPress installed successfully."
+fi
+
+# 5. Execute the command from CMD (PID 1)
+exec "$@"
+```
+
+We will now configure the web server.
+
+**NGINX**
+
+Create the `entrypoint.sh` script:
+
+```bash
+touch ~/inception/srcs/requirements/nginx/tools/entrypoint.sh
+```
+
+And copy the following in it:
+
+```bash
+#!/bin/sh
+
+# Stop the script immediately if any command fails
+set -e
+
+# 1. Fail-fast validation
+if [ -z "$DOMAIN_NAME" ]; then
+    echo "[ERROR] DOMAIN_NAME environment variable is missing." >&2
+    exit 1
+fi
+
+# 2. Dynamic Configuration Injection
+# We replace the placeholder in nginx.conf with your actual domain name
+echo "[INFO] Configuring NGINX for domain: $DOMAIN_NAME"
+sed -i "s/__DOMAIN_NAME__/$DOMAIN_NAME/g" /etc/nginx/nginx.conf
+
+# 3. SSL Certificate Generation
+# We generate a self-signed certificate if it doesn't exist yet
+CERTS_DIR="/etc/nginx/ssl"
+
+if [ ! -f "$CERTS_DIR/$DOMAIN_NAME.crt" ]; then
+    echo "[INFO] Generating self-signed SSL certificate..."
+   
+    mkdir -p "$CERTS_DIR"
+   
+    # Generate the key and certificate valid for 365 days
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout "$CERTS_DIR/$DOMAIN_NAME.key" \
+        -out "$CERTS_DIR/$DOMAIN_NAME.crt" \
+        -subj "/C=FR/ST=GrandEst/L=Mulhouse/O=42/OU=Inception/CN=$DOMAIN_NAME"
+       
+    echo "[INFO] SSL certificate generated successfully."
+fi
+
+# 4. Execute the command from CMD (PID 1)
+exec "$@"
+```
+
+NGINX also needs a `nginx.conf` file:
+
+```bash
+touch ~/inception/srcs/requirements/nginx/conf/nginx.conf
+```
+
+Copy the following in it:
+
+```nginx
+# NGINX Configuration File
+
+# Run nginx as www-data user for security
+user www-data;
+worker_processes auto;
+pid /run/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    # Basic settings and MIME types
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    # Logging paths
+    access_log /var/log/nginx/access.log;
+    error_log /var/log/nginx/error.log;
+
+    # Main Server Block
+    server {
+        # Listen exclusively on port 443 for both IPv4 and IPv6
+        listen 443 ssl;
+        listen [::]:443 ssl;
+
+        # The server name will be dynamically replaced by the entrypoint script
+        server_name __DOMAIN_NAME__;
+
+        # SSL Configuration (Subject strictly requires TLSv1.2 and/or TLSv1.3)
+        ssl_certificate /etc/nginx/ssl/__DOMAIN_NAME__.crt;
+        ssl_certificate_key /etc/nginx/ssl/__DOMAIN_NAME__.key;
+        ssl_protocols TLSv1.2 TLSv1.3;
+
+        # Root directory (shared via Docker volumes)
+        root /var/www/html;
+       
+        # Default files to serve
+        index index.php index.html index.htm;
+
+        # Route all standard requests
+        location / {
+            try_files $uri $uri/ /index.php?$args;
+        }
+
+        # Pass PHP scripts to PHP-FPM (the WordPress container)
+        location ~ \.php$ {
+            # Prevent NGINX from passing non-existent files to PHP-FPM
+            try_files $uri =404;
+           
+            # Forward the request to the 'wordpress' container on port 9000
+            fastcgi_pass wordpress:9000;
+            fastcgi_index index.php;
+            include fastcgi_params;
+           
+            # Tell PHP exactly which file to execute
+            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        }
+
+        # Security - deny access to hidden files like .htaccess
+        location ~ /\.ht {
+            deny all;
+        }
+    }
+}
+```
 
 ---
 
@@ -536,10 +875,9 @@ CMD ["nginx", "-g", "daemon off;"]
 
 Once everything is written and mapped out:
 ```bash
-sudo apt update
-sudo apt install make
+sudo apt update && sudo apt install make
 cd ~/inception
-make up
+make
 ```
 
 Your system is alive at `https://yourlogin.42.fr` (Accept self-signed certificates in your browser).
@@ -559,10 +897,9 @@ Let's create the structure:
 mkdir -p ~/inception/srcs/requirements/bonus/redis/tools
 ```
 
-We will now create the Redis Dockerfile:
+We will now create the Redis `Dockerfile`:
 ```bash
-cd ~/inception/srcs/requirements/bonus/redis
-touch Dockerfile
+touch ~/inception/srcs/requirements/bonus/redis/Dockerfile
 ```
 
 Copy and paste the following configuration in it:
@@ -586,10 +923,10 @@ EXPOSE 6379
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 ```
 
-Now it's time to create the entrypoint.sh for Redis:
+Now it's time to create the `entrypoint.sh` for Redis:
+
 ```bash
-cd ~/inception/srcs/requirements/bonus/redis/tools
-touch entrypoint.sh
+touch ~/inception/srcs/requirements/bonus/redis/tools/entrypoint.sh
 ```
 
 Copy and paste the following configuration in it:
@@ -615,7 +952,7 @@ echo "Starting Redis server..."
 exec redis-server --bind 0.0.0.0 --requirepass "$REDIS_PASSWORD" --protected-mode no
 ```
 
-Now we must update the docker-compose.yml file. Add the redis_password secret and the service configuration:
+Now we must update the `docker-compose.yml` file. Add the redis_password secret and the service configuration:
 ```yaml
 # Add this in the main 'secrets' section at the bottom
 secrets:
@@ -644,7 +981,8 @@ secrets:
       - wp_user_password
 ```
 
-The WordPress entrypoint.sh file also needs editing, add the following right after the secondary account creation:
+The WordPress `entrypoint.sh` file also needs editing, add the following right after the secondary account creation:
+
 ```bash
     # Redis Setup
     echo "Configuring Redis Cache with authentication..."
@@ -679,7 +1017,7 @@ We will now create a secret for it:
 echo "your_ftp_password" > ~/inception/secrets/ftp_password.txt
 ```
 
-Add your username at the end of the .env file:
+Add your username at the end of the `.env` file:
 ```env
 # FTP SETUP
 FTP_USER=yourlogin
@@ -690,10 +1028,9 @@ Let's create the structure:
 mkdir -p ~/inception/srcs/requirements/bonus/ftp/tools
 ```
 
-We will now create the FTP Dockerfile:
+We will now create the FTP `Dockerfile`:
 ```bash
-cd ~/inception/srcs/requirements/bonus/ftp
-touch Dockerfile
+touch ~/inception/srcs/requirements/bonus/ftp/Dockerfile
 ```
 
 Copy and paste the following configuration:
@@ -717,10 +1054,10 @@ EXPOSE 21 40000-40005
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 ```
 
-FTP requires a system user to operate. We create it dynamically at runtime with an entrypoint.sh file:
+FTP requires a system user to operate. We create it dynamically at runtime with an `entrypoint.sh` file:
+
 ```bash
-cd ~/inception/srcs/requirements/bonus/ftp/tools
-touch entrypoint.sh
+touch ~/inception/srcs/requirements/bonus/ftp/tools/entrypoint.sh
 ```
 
 Copy and paste the following configuration:
@@ -787,7 +1124,7 @@ exec vsftpd /etc/vsftpd.conf
 Passive mode is essential here, as Docker uses NAT networking. Without it, the FTP client would not be able to list or transfer files correctly.
 
 
-It is now time to update the docker-compose.yml file:
+It is now time to update the `docker-compose.yml` file:
 ```yaml
 # 1. Add this to the main 'secrets' section at the bottom
 secrets:
@@ -824,12 +1161,6 @@ You can test it with the following command:
 curl -u yourlogin:yourpassword ftp://your_vm_ip_address:21/a
 ```
 
-Or install and use ftp to navigate in it:
-```bash
-sudo apt-get update && sudo apt-get install -y ftp
-ftp your_vm_ip_address 21
-```
-
 If you chose NAT mode, you first have to create all these port forwarding rules :
 
 | Name | Protocol | Host IP | Host Port | Guest IP | Guest Port |
@@ -847,9 +1178,19 @@ Then, you can test it with the following command:
 curl -u yourlogin:yourpassword ftp://127.0.0.1:2121/
 ```
 
-Or install and use ftp to navigate in it:
+Alternatively, you can test the connection interactively using the `ftp` client with the following commands:
+
 ```bash
-sudo apt-get update && sudo apt-get install -y ftp
+sudo apt update && sudo apt install -y ftp
+```
+
+**And, if you chose Bridged mode:**
+```bash
+ftp your_vm_ip_address 21
+```
+
+**Or, if you chose NAT mode:**
+```bash
 ftp 127.0.0.1 2121
 ```
 
@@ -859,18 +1200,19 @@ If the connection is successful, you should see a listing of the files in your W
 
 ### Bonus 3: STATIC WEBSITE
 
-This bonus consists of a simple static page served by a dedicated NGINX container.
+This bonus consists of a simple static page served by a dedicated webserver container. For this service, we have decided to use **lighttpd**, a secure, fast, and very lightweight alternative to NGINX.
 
 Create the project structure:
+
 ```bash
 mkdir -p ~/inception/srcs/requirements/bonus/static/www
 mkdir -p ~/inception/srcs/requirements/bonus/static/conf
 ```
 
-Let's create the Dockerfile for the static website. Since we use the default NGINX configuration which already serves /var/www/html, we don't even need a custom nginx.conf
+Let's create the `Dockerfile` for the static website:
+
 ```bash
-cd ~/inception/srcs/requirements/bonus/static
-touch Dockerfile
+touch ~/inception/srcs/requirements/bonus/static/Dockerfile
 ```
 
 Copy and paste the following code in it:
@@ -901,8 +1243,7 @@ CMD ["lighttpd", "-D", "-f", "/etc/lighttpd/lighttpd.conf"]
 
 Now, let's create a simple HTML file:
 ```bash
-cd ~/inception/srcs/requirements/bonus/static/www
-touch index.html
+touch ~/inception/srcs/requirements/bonus/static/www/index.html
 ```
 
 Copy and paste the following code in it:
@@ -930,8 +1271,7 @@ Copy and paste the following code in it:
 
 We will now configure the web server, lighttpd. Let's start with its configuration file:
 ```bash
-cd ~/inception/srcs/requirements/bonus/static/conf
-touch lighttpd.conf
+touch ~/inception/srcs/requirements/bonus/static/conf/lighttpd.conf
 ```
 
 Open it and paste the following configuration:
@@ -956,11 +1296,7 @@ server.port                 = 80
 index-file.names            = ( "index.html" )
 
 # Basic MIME types (add more if you use images or JS later)
-mimetype.assign             = (
-    ".html" => "text/html",
-    ".css"  => "text/css",
-    ".txt"  => "text/plain"
-)
+mimetype.assign             = ( ".html" => "text/html" )
 ```
 
 We need to update the docker-compose.yml file and map the host port 8081 to the container port 80:
@@ -977,13 +1313,10 @@ We need to update the docker-compose.yml file and map the host port 8081 to the 
 ```
 
 Do not forget the VirtualBox rule if you chose the NAT mode:
-Rule 3: Static Website
-• Name: Static
-• Protocol: TCP
-• Host IP: 127.0.0.1 (or leave empty)
-• Host Port: 8081
-• Guest IP: (leave empty)
-• Guest Port: 8081
+
+| Rule Name    | Protocol | Host IP   | Host Port | Guest IP | Guest Port |
+|--------------|----------|-----------|-----------|----------|------------|
+| **Static**      | TCP      | 127.0.0.1 | 8081      |          | 8081         |
 
 Then open the following URL — make sure to use HTTP (not HTTPS):
 http://yourlogin.42.fr:8081
@@ -995,17 +1328,19 @@ http://yourlogin.42.fr:8081
 Adminer is a lightweight database management tool written in a single PHP file. It is a great alternative to phpMyAdmin.
 
 Create the structure:
+
 ```bash
 mkdir -p ~/inception/srcs/requirements/bonus/adminer
 ```
 
-We will now create the Dockerfile. Adminer doesn't even need local files or entrypoint scripts, we can download it directly when building the image.
+We will now create the `Dockerfile`. Adminer doesn't even need local files or entrypoint scripts, we can download it directly when building the image.
+
 ```bash
-cd ~/inception/srcs/requirements/bonus/adminer
-touch Dockerfile
+touch ~/inception/srcs/requirements/bonus/adminer/Dockerfile
 ```
 
 Copy and paste the following code in it:
+
 ```dockerfile
 # Use Debian Bookworm as the base image for consistency
 FROM debian:12
@@ -1037,7 +1372,7 @@ EXPOSE 8080
 CMD ["php", "-S", "0.0.0.0:8080", "-t", "/var/www/html"]
 ```
 
-We must update the docker-compose.yml file and add the Adminer service. We map it to port 8080. It needs to be on the inception network to communicate with the MariaDB container. Type:
+We must update the `docker-compose.yml` file and add the Adminer service. We map it to port 8080. It needs to be on the inception network to communicate with the MariaDB container. Type:
 ```yaml
   adminer:
     build: ./requirements/bonus/adminer
@@ -1053,20 +1388,17 @@ We must update the docker-compose.yml file and add the Adminer service. We map i
 ```
 
 If you chose NAT mode, add the following VirtualBox NAT Rule:
-Rule 4: Adminer
-• Name: Adminer
-• Protocol: TCP
-• Host IP: 127.0.0.1 (or leave empty)
-• Host Port: 8080
-• Guest IP: (leave empty)
-• Guest Port: 8080
+
+| Rule Name    | Protocol | Host IP   | Host Port | Guest IP | Guest Port |
+|--------------|----------|-----------|-----------|----------|------------|
+| **Adminer**      | TCP      | 127.0.0.1 | 8080      |          | 8080         |
 
 Rebuild your infrastructure using `make re`. Open your browser and go to http://yourlogin.42.fr:8080. You will be greeted by the Adminer login screen. Use the following credentials:
-• System: MySQL / MariaDB
-• Server: mariadb (This is the container name, Docker's internal DNS will resolve it)
-• Username: yourlogin
-• Password: The password you set in your secrets
-• Database: wordpress
+* System: MySQL / MariaDB
+* Server: mariadb (This is the container name, Docker's internal DNS will resolve it)
+* Username: yourlogin
+* Password: The password you set in your secrets
+* Database: wordpress
 
 If you can log in and see your WordPress tables (wp_users, wp_posts, etc.), Adminer is fully functional!
 
@@ -1087,18 +1419,19 @@ Create the necessary folders for the Arcane requirements:
 mkdir -p ~/inception/srcs/requirements/bonus/arcane/tools
 ```
 
-Update your Makefile to include the Arcane data directory:
+Update your `Makefile` to include the Arcane data directory:
 ```makefile
 @mkdir -p $(DATA_PATH)/mariadb $(DATA_PATH)/wordpress $(DATA_PATH)/arcane
 ```
 
-It's time to create the Arcane Dockerfile. We'll use a multi-stage build to keep our image lightweight while strictly basing our final container on Debian 12.
+It's time to create the Arcane `Dockerfile`. We'll use a multi-stage build to keep our image lightweight while strictly basing our final container on Debian 12.
+
 ```bash
-cd ~/inception/srcs/requirements/bonus/arcane
-touch Dockerfile
+touch ~/inception/srcs/requirements/bonus/arcane/Dockerfile
 ```
 
 Copy and paste the following code in it:
+
 ```dockerfile
 # Stage 1: Temporary stage to get the binary
 FROM ghcr.io/getarcaneapp/arcane:latest AS builder
@@ -1125,13 +1458,14 @@ EXPOSE 3552
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 ```
 
-Arcane also needs an entrypoint.sh script:
+Arcane also needs an `entrypoint.sh` script:
+
 ```bash
-cd ~/inception/srcs/requirements/bonus/arcane/tools
-touch entrypoint.sh
+touch ~/inception/srcs/requirements/bonus/arcane/tools/entrypoint.sh
 ```
 
 Copy and paste the following code in it:
+
 ```bash
 #!/bin/sh
 
@@ -1143,7 +1477,7 @@ export JWT_SECRET=$(cat /run/secrets/arc_jwt_secret)
 exec arcane
 ```
 
-Add the service and the secrets declaration to your docker-compose.yml:
+Add the service and the secrets declaration to your `docker-compose.yml`:
 ```yaml
   arcane:
     build: ./requirements/bonus/arcane
@@ -1180,5 +1514,7 @@ volumes:
 ```
 
 Then open the following URL — make sure to use HTTP (not HTTPS):
-http://yourlogin.42.fr:3552
-Follow the setup instructions to create your admin account. The default username and password are 'arcane' and 'arcane-admin'. You can now see all your Inception containers (WordPress, NGINX, MariaDB) in a single dashboard.
+
+[http://yourlogin.42.fr:3552](http://yourlogin.42.fr:3552)
+
+Follow the setup instructions to create your admin account. The default username and password are `arcane` and `arcane-admin`. You can now see all your Inception containers (WordPress, NGINX, MariaDB) in a single dashboard.

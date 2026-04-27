@@ -68,7 +68,8 @@ The Debian installation will begin. Select **"Graphical Install"**. This option 
 *   **Hostname:** `inception`
 *   **Domain name:** (leave blank)
 *   **Root password:** (Password of your choice)
-*   **Full name & Username:** (Your login)
+*   **Full name:** (Your login)
+*   **Username:** (Your login)
 *   **User password:** (Password of your choice)
 
 For partitioning and software selection:
@@ -121,7 +122,7 @@ Go to the **VirtualBox** main window. Select your VM -> **Settings** -> **Networ
 Choose between **NAT** and **Bridged Adapter**:
 
 *   **NAT mode:** Isolates the VM in a private network. The VM can access the internet, but your host cannot access VM services without port forwarding.
-*   **Bridged mode:** Connects the VM directly to your local network. You can access `yourlogin.42.fr` without port forwarding, but the IP may change on reboot (requires `/etc/hosts` and `ssh config` updates).
+*   **Bridged mode:** Connects the VM directly to your local network. You can access `yourlogin.42.fr` without port forwarding, but you may require `/etc/hosts` and `ssh config` updates because the IP can change on reboot.
 
 #### If using NAT mode:
 Click on **Port Forwarding** and add the following rules:
@@ -155,9 +156,18 @@ From your **host machine's terminal**, verify the SSH connection:
 Confirm the fingerprint (`yes`) and enter your user password. If your prompt changes to yourlogin@inception:~$, it means everything is working correctly.
 
 #### Connect VSCode via SSH
-1. Open **VSCode** locally and install the **"Remote - SSH"** extension.
-2. Open the command palette (`Ctrl+Shift+P` / `Cmd+Shift+P`), type **SSH: Open SSH Configuration File**.
-3. Select your user's config file (e.g., `~/.ssh/config`) and add the corresponding block:
+
+Now we will use this connection to link Visual Studio Code.
+
+1. Open VSCode on your physical computer.
+2. Go to the Extensions tab (the small squares icon on the left) or press Ctrl+Shift+X (or Cmd+Shift+X on Mac).
+3. Search for and install the official Remote - SSH extension (published by Microsoft).
+
+Then, edit the local SSH configuration file:
+
+4. Open **VSCode** locally and install the **"Remote - SSH"** extension.
+5. Open the command palette (`Ctrl+Shift+P` / `Cmd+Shift+P`), type **SSH: Open SSH Configuration File**.
+6. Select your user's config file (e.g., `~/.ssh/config`) and add the corresponding block:
 
 **For Bridged Mode:**
 ```ssh-config
@@ -174,11 +184,13 @@ Host inception
     Port 2222
 ```
 
-4. In VSCode, click the `><` icon (bottom-left) -> **Connect to Host...** -> **inception**.
-5. A new VSCode window will open and you will then be prompted to enter your password (the one for the "yourlogin" user).
-6. Once connected, go to the VSCode file explorer (on the left), click **Open Folder**, then select `/home/<yourlogin>` and confirm.
+We can now connect to the virtual machine via SSH from VSCode:
 
-To avoid VSCode asking for your password too oftenm you can set up an SSH key. If you already have one, skip to the next step.
+7. In VSCode, click the `><` icon (bottom-left) -> **Connect to Host...** -> **inception**.
+8. A new VSCode window will open and you will then be prompted to enter your password (the one for the "yourlogin" user).
+9. Once connected, go to the VSCode file explorer (on the left), click **Open Folder**, then select `/home/<yourlogin>` and confirm.
+
+To avoid VSCode asking for your password too often, you can set up an SSH key. If you already have one, skip to the next step.
 
 Be careful: generating a new SSH key can overwrite an existing one if you are not attentive to the file location, so make sure you know what you are doing before proceeding. If you don’t have an SSH key yet, you first need to create one. In your physical computer’s terminal (not the VM), run:
 
@@ -186,7 +198,9 @@ Be careful: generating a new SSH key can overwrite an existing one if you are no
 ssh-keygen -t rsa -b 4096
 ```
 
-Press Enter for all prompts to accept the default options and do not set a passphrase for the key. Then, once the key is created (or if you already had one), send it to your virtual machine using the following command:
+Press Enter for all prompts to accept the default options and do not set a passphrase for the key.
+
+Then, once the key is created (or if you already had one), send it to your virtual machine using the following command:
 
 **For Bridged Mode:**
 ```
@@ -198,11 +212,13 @@ ssh-copy-id yourlogin@your_vm_ip_address
 ssh-copy-id -p 2222 yourlogin@localhost
 ```
 
+You will be asked for your password one last time. After that, the connection between VSCode and your VM will be instant and seamless.
+
 ---
 
 ### 6. Local Domain DNS Routing
 
-We will also need to modify the `/etc/hosts` file so that your domain name (`yourlogin.42.fr`) correctly resolves to your virtual machine. This allows your system to redirect requests for the domain to the right IP address, whether you are using a browser or tools like VSCode and SSH. 
+We will also need to modify the `/etc/hosts` file so that your domain name (`yourlogin.42.fr`) correctly resolves to your virtual machine. This allows your system to redirect requests for the domain to the right IP address, whether you are using a browser or tools like VSCode and SSH.
 
 Open your host's `/etc/hosts` file (with `sudo`):
 ```bash
@@ -216,7 +232,7 @@ Add the following line based on your mode:
 ```
 <your_vm_ip_address>   yourlogin.42.fr
 ```
-*(Must update if VM IP changes)*
+If the VM’s IP address changes, you must update it both in this `/etc/hosts` file and in your VSCode SSH configuration as well.
 
 **For NAT Mode:**
 ```
@@ -263,7 +279,7 @@ Install Docker:
 sudo apt update && sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 
-Verify installation: `sudo systemctl status docker` and `docker compose version`.
+The Docker service starts automatically after installation. To verify that Docker is running, use: `sudo systemctl status docker` and `docker compose version`.
 
 To use Docker without `sudo`:
 ```bash
@@ -302,7 +318,7 @@ secrets/
 EOF
 ```
 
-Create the `.env` file in `srcs` and copy the following configuration into it - make sure to replace `yourlogin` with your actual 42 username in the lines below:
+To create the `.env` file in `srcs` with the following configuration, type:
 ```bash
 cat << 'EOF' > ~/inception/srcs/.env
 DOMAIN_NAME=yourlogin.42.fr
@@ -318,6 +334,8 @@ WP_USER=visitor
 WP_USER_EMAIL=visitor@student.42.fr
 EOF
 ```
+
+Make sure to replace `yourlogin` with your actual 42 username.
 
 While `.env` files are often used to store sensitive data, security best practices recommend keeping critical settings (i.e. passwords) into dedicated secret files. Replace the values in quotes with passwords of your choice securely in `~/inception/secrets/`:
 
@@ -485,7 +503,7 @@ re: fclean all
 
 ---
 
-### 10. Dockerfiles & Entrypoint Scripts
+### 10. Dockerfiles, Entrypoint Scripts and other configuration files
 
 The configuration files (`Dockerfile`, `entrypoint.sh`, `nginx.conf`, etc.) need to be written according to the tutorial provided previously. Follow the setup code to place each `Dockerfile` internally correctly:
 
@@ -522,86 +540,7 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["mysqld", "--user=mysql", "--bind-address=0.0.0.0"]
 ```
 
-**WordPress**
-
-Create the `Dockerfile`:
-
-```bash
-touch ~/inception/srcs/requirements/wordpress/Dockerfile
-```
-
-And copy the following in it:
-
-```dockerfile
-# Use Debian Bookworm as the base image
-FROM debian:12
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && \
-	apt-get install -y \
-	php8.2-fpm php8.2-mysql php8.2-curl php8.2-gd php8.2-intl \
-	php8.2-mbstring php8.2-xml php8.2-zip wget mariadb-client ca-certificates && \
-	rm -rf /var/lib/apt/lists/*
-
-RUN wget https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && \
-	chmod +x wp-cli.phar && \
-	mv wp-cli.phar /usr/local/bin/wp
-
-RUN mkdir -p /run/php && \
-	chown -R www-data:www-data /run/php
-
-RUN sed -i 's|listen = /run/php/php8.2-fpm.sock|listen = 9000|' /etc/php/8.2/fpm/pool.d/www.conf
-
-WORKDIR /var/www/html
-
-COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
-
-EXPOSE 9000
-
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["php-fpm8.2", "-F"]
-```
-
-**NGINX**
-
-Create the `Dockerfile`:
-
-```bash
-touch ~/inception/srcs/requirements/nginx/Dockerfile
-```
-
-And copy the following in it:
-
-```dockerfile
-# Use Debian Bookworm as the base image
-FROM debian:12
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && \
-	apt-get install -y nginx openssl && \
-	rm -rf /var/lib/apt/lists/*
-
-COPY conf/nginx.conf /etc/nginx/nginx.conf
-
-COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
-
-EXPOSE 443
-
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["nginx", "-g", "daemon off;"]
-```
-
-[Source: https://docs.docker.com/get-started/docker-concepts/building-images/writing-a-dockerfile/](https://docs.docker.com/get-started/docker-concepts/building-images/writing-a-dockerfile/)
-
-We now need to create the script that ensures that your MariaDB database is only configured once, handles security through secrets, and manages the process lifecycle correctly.
-
-**MariaDB**
-
-Create the `entrypoint.sh` script:
+Then, create the `entrypoint.sh` script:
 
 ```bash
 touch ~/inception/srcs/requirements/mariadb/tools/entrypoint.sh
@@ -653,9 +592,47 @@ fi
 exec "$@"
 ```
 
-It's time to create the script that will setup WordPress.
-
 **WordPress**
+
+Create the `Dockerfile`:
+
+```bash
+touch ~/inception/srcs/requirements/wordpress/Dockerfile
+```
+
+And copy the following in it:
+
+```dockerfile
+# Use Debian Bookworm as the base image
+FROM debian:12
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && \
+	apt-get install -y \
+	php8.2-fpm php8.2-mysql php8.2-curl php8.2-gd php8.2-intl \
+	php8.2-mbstring php8.2-xml php8.2-zip wget mariadb-client ca-certificates && \
+	rm -rf /var/lib/apt/lists/*
+
+RUN wget https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && \
+	chmod +x wp-cli.phar && \
+	mv wp-cli.phar /usr/local/bin/wp
+
+RUN mkdir -p /run/php && \
+	chown -R www-data:www-data /run/php
+
+RUN sed -i 's|listen = /run/php/php8.2-fpm.sock|listen = 9000|' /etc/php/8.2/fpm/pool.d/www.conf
+
+WORKDIR /var/www/html
+
+COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+EXPOSE 9000
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["php-fpm8.2", "-F"]
+```
 
 Create the `entrypoint.sh` script:
 
@@ -742,9 +719,36 @@ fi
 exec "$@"
 ```
 
-We will now configure the web server.
-
 **NGINX**
+
+Create the `Dockerfile`:
+
+```bash
+touch ~/inception/srcs/requirements/nginx/Dockerfile
+```
+
+And copy the following in it:
+
+```dockerfile
+# Use Debian Bookworm as the base image
+FROM debian:12
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && \
+	apt-get install -y nginx openssl && \
+	rm -rf /var/lib/apt/lists/*
+
+COPY conf/nginx.conf /etc/nginx/nginx.conf
+
+COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+EXPOSE 443
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["nginx", "-g", "daemon off;"]
+```
 
 Create the `entrypoint.sh` script:
 
@@ -868,6 +872,12 @@ http {
     }
 }
 ```
+
+Sources: 
+
+[https://docs.docker.com/get-started/docker-concepts/building-images/writing-a-dockerfile/](https://docs.docker.com/get-started/docker-concepts/building-images/writing-a-dockerfile/)  
+[Docker Entrypoint Documentation: https://docs.docker.com/reference/dockerfile/#entrypoint](https://docs.docker.com/reference/dockerfile/#entrypoint)  
+[NGINX Configuration Documentation: https://nginx.org/en/docs/beginners_guide.html](https://nginx.org/en/docs/beginners_guide.html)
 
 ---
 

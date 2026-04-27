@@ -119,30 +119,36 @@ After rebooting, log in using the username and password provided earlier. Once l
 ### 4. Network Configuration
 
 Go to the **VirtualBox** main window. Select your VM -> **Settings** -> **Network** tab. 
-Choose between **NAT** and **Bridged Adapter**:
+Choose between **Bridged Adapter** and **NAT** and :
 
-*   **NAT mode:** Isolates the VM in a private network. The VM can access the internet, but your host cannot access VM services without port forwarding.
 *   **Bridged mode:** Connects the VM directly to your local network. You can access `yourlogin.42.fr` without port forwarding, but you may require `/etc/hosts` and `ssh config` updates because the IP can change on reboot.
 
-#### If using NAT mode:
-Click on **Port Forwarding** and add the following rules:
+    Find the VM's IP:
 
-| Rule Name    | Protocol | Host IP   | Host Port | Guest IP | Guest Port |
-|--------------|----------|-----------|-----------|----------|------------|
-| **SSH**      | TCP      | 127.0.0.1 | 2222      |          | 22         |
-| **HTTPS**    | TCP      | 127.0.0.1 | 8443      |          | 443        |
+    ```bash
+    hostname -I
+    ```
 
-Apply the changes and restart the VM:
+    Then note the first IP address displayed — we will need it.
+
+*   **NAT mode:** Isolates the VM in a private network. The VM can access the internet, but your host cannot access VM services without port forwarding.
+
+    Click on **Port Forwarding** and add the following rules:
+
+    | Rule Name    | Protocol | Host IP   | Host Port | Guest IP | Guest Port |
+    |--------------|----------|-----------|-----------|----------|------------|
+    | **SSH**      | TCP      | 127.0.0.1 | 2222      |          | 22         |
+    | **HTTPS**    | TCP      | 127.0.0.1 | 8443      |          | 443        |
+
+    Apply the changes.
+
+Now, restart the VM:
+
 ```bash
 reboot
 ```
 
-#### If using Bridged mode:
-Log in to the VM and find its IP:
-```bash
-hostname -I
-```
-Then note the first IP address displayed — we will need it.
+And log in again, using your username and password.
 
 ---
 
@@ -150,8 +156,17 @@ Then note the first IP address displayed — we will need it.
 
 From your **host machine's terminal**, verify the SSH connection:
 
-*   **Bridged Mode:** `ssh yourlogin@<your_vm_ip_address>`
-*   **NAT Mode:** `ssh yourlogin@localhost -p 2222`
+*   Using **Bridged Mode:**
+
+    ```
+    ssh yourlogin@<your_vm_ip_address>
+    ```
+
+*   Using **NAT Mode:**
+
+    ```
+    ssh yourlogin@localhost -p 2222
+    ```
 
 Confirm the fingerprint (`yes`) and enter your user password. If your prompt changes to yourlogin@inception:~$, it means everything is working correctly.
 
@@ -160,59 +175,69 @@ Confirm the fingerprint (`yes`) and enter your user password. If your prompt cha
 Now we will use this connection to link Visual Studio Code.
 
 1. Open VSCode on your physical computer.
+
 2. Go to the Extensions tab (the small squares icon on the left) or press Ctrl+Shift+X (or Cmd+Shift+X on Mac).
+
 3. Search for and install the official Remote - SSH extension (published by Microsoft).
 
 Then, edit the local SSH configuration file:
 
 4. Open **VSCode** locally and install the **"Remote - SSH"** extension.
+
 5. Open the command palette (`Ctrl+Shift+P` / `Cmd+Shift+P`), type **SSH: Open SSH Configuration File**.
+
 6. Select your user's config file (e.g., `~/.ssh/config`) and add the corresponding block:
 
-**For Bridged Mode:**
-```ssh-config
-Host inception
-    HostName <your_vm_ip_address>
-    User <yourlogin>
-```
+    **For Bridged Mode:**
 
-**For NAT Mode:**
-```ssh-config
-Host inception
-    HostName localhost
-    User <yourlogin>
-    Port 2222
-```
+    ```ssh-config
+    Host inception
+        HostName <your_vm_ip_address>
+        User <yourlogin>
+    ```
 
-We can now connect to the virtual machine via SSH from VSCode:
+    **For NAT Mode:**
+
+    ```ssh-config
+    Host inception
+        HostName localhost
+        User <yourlogin>
+        Port 2222
+    ```
+
+    We can now connect to the virtual machine via SSH from VSCode.
 
 7. In VSCode, click the `><` icon (bottom-left) -> **Connect to Host...** -> **inception**.
+
 8. A new VSCode window will open and you will then be prompted to enter your password (the one for the "yourlogin" user).
+
 9. Once connected, go to the VSCode file explorer (on the left), click **Open Folder**, then select `/home/<yourlogin>` and confirm.
 
-To avoid VSCode asking for your password too often, you can set up an SSH key. If you already have one, skip to the next step.
+10. To avoid VSCode asking for your password too often, you can set up an SSH key. If you are not interested, skip to the "Local Domain DNS Routing" chapter. Otherwise, if you already have one, skip to the next step.
 
-Be careful: generating a new SSH key can overwrite an existing one if you are not attentive to the file location, so make sure you know what you are doing before proceeding. If you don’t have an SSH key yet, you first need to create one. In your physical computer’s terminal (not the VM), run:
+    > **Be careful:** generating a new SSH key can overwrite an existing one if you are not attentive to the file location, so make sure you know what you are doing before proceeding. If you don’t have an SSH key yet, you first need to create one. In your physical computer’s terminal (not the VM), run:
 
-```bash
-ssh-keygen -t rsa -b 4096
-```
+    ```bash
+    ssh-keygen -t rsa -b 4096
+    ```
 
-Press Enter for all prompts to accept the default options and do not set a passphrase for the key.
+    Press Enter for all prompts to accept the default options and do not set a passphrase for the key.
 
-Then, once the key is created (or if you already had one), send it to your virtual machine using the following command:
+11. Then, once the key is created (or if you already had one), send it to your virtual machine using the following command:
 
-**For Bridged Mode:**
-```
-ssh-copy-id yourlogin@your_vm_ip_address
-```
+    **For Bridged Mode:**
 
-**For NAT Mode:**
-```
-ssh-copy-id -p 2222 yourlogin@localhost
-```
+    ```
+    ssh-copy-id yourlogin@your_vm_ip_address
+    ```
 
-You will be asked for your password one last time. After that, the connection between VSCode and your VM will be instant and seamless.
+    **For NAT Mode:**
+
+    ```
+    ssh-copy-id -p 2222 yourlogin@localhost
+    ```
+
+    You will be asked for your password one last time. After that, the connection between VSCode and your VM will be instant and seamless.
 
 ---
 
@@ -227,17 +252,19 @@ sudo nano /etc/hosts
 
 Add the following line based on your mode:
 
-**For Bridged Mode:**
+* **For Bridged Mode:**
 
-```
-<your_vm_ip_address>   yourlogin.42.fr
-```
-If the VM’s IP address changes, you must update it both in this `/etc/hosts` file and in your VSCode SSH configuration as well.
+  ```
+  <your_vm_ip_address>   yourlogin.42.fr
+  ```
 
-**For NAT Mode:**
-```
-127.0.0.1   yourlogin.42.fr
-```
+  If the VM’s IP address changes, you must update it both in this `/etc/hosts` file and in your VSCode SSH configuration as well.
+
+* **For NAT Mode:**
+
+  ```
+  127.0.0.1   yourlogin.42.fr
+  ```
 
 ---
 
@@ -287,7 +314,7 @@ sudo usermod -aG docker yourlogin
 ```
 *(You may need to log out and log back in for this to take effect.)*
 
-[Source : https://docs.docker.com/engine/install/debian/#install-using-the-repository](https://docs.docker.com/engine/install/debian/#install-using-the-repository)
+https://docs.docker.com/engine/install/debian/#install-using-the-repository
 
 ---
 
@@ -451,7 +478,7 @@ volumes:
       device: /home/yourlogin/data/wordpress
 ```
 
-[Source: https://docs.docker.com/compose/gettingstarted/](https://docs.docker.com/compose/gettingstarted/)
+https://docs.docker.com/compose/gettingstarted/
 
 Now, create the `Makefile`:
 
@@ -499,7 +526,7 @@ fclean:
 re: fclean all
 ```
 
-[Source: https://docs.docker.com/compose/intro/compose-application-model/](https://docs.docker.com/compose/intro/compose-application-model/)
+https://docs.docker.com/compose/intro/compose-application-model/
 
 ---
 
@@ -873,11 +900,10 @@ http {
 }
 ```
 
-Sources: 
-
-[https://docs.docker.com/get-started/docker-concepts/building-images/writing-a-dockerfile/](https://docs.docker.com/get-started/docker-concepts/building-images/writing-a-dockerfile/)  
-[Docker Entrypoint Documentation: https://docs.docker.com/reference/dockerfile/#entrypoint](https://docs.docker.com/reference/dockerfile/#entrypoint)  
-[NGINX Configuration Documentation: https://nginx.org/en/docs/beginners_guide.html](https://nginx.org/en/docs/beginners_guide.html)
+Sources:  
+https://docs.docker.com/get-started/docker-concepts/building-images/writing-a-dockerfile/  
+https://docs.docker.com/reference/dockerfile/#entrypoint  
+https://nginx.org/en/docs/beginners_guide.html
 
 ---
 
@@ -897,7 +923,7 @@ Your system is alive at `https://yourlogin.42.fr` (Accept self-signed certificat
 ## BONUS Deployments
 
 ### Bonus 1: REDIS
-Redis is an excellent performance upgrade for your WordPress site. We will now create a secret for it:
+Redis is an excellent performance upgrade for your WordPress site. We will now create a secret for it. Type the following and replace `your_redis_password` with a password of your choice:
 ```bash
 echo "your_redis_password" > ~/inception/secrets/redis_password.txt 
 ```
@@ -933,7 +959,7 @@ EXPOSE 6379
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 ```
 
-Now it's time to create the `entrypoint.sh` for Redis:
+Now it's time to create the `entrypoint.sh` file for Redis:
 
 ```bash
 touch ~/inception/srcs/requirements/bonus/redis/tools/entrypoint.sh
@@ -1011,7 +1037,8 @@ The WordPress `entrypoint.sh` file also needs editing, add the following right a
     wp redis enable --allow-root
 ```
 
-To verify that everything is working as expected, open your browser and go to:
+Rebuild your infrastructure using `make re` to apply the changes and verify that everything is working as expected, by opening your browser and go to:
+
 https://yourlogin.42.fr/wp-admin
 
 Log in using your credentials, then navigate to Settings → Redis. If you can read “Status: Connected” displayed in green, everything works fine.
@@ -1020,9 +1047,9 @@ Log in using your credentials, then navigate to Settings → Redis. If you can r
 
 ### Bonus 2: FTP
 
-FTP (File Transfer Protocol) is a classic bonus with real practical value. It allows you to upload and retrieve files (images, themes, plugins, etc.) directly into your WordPress directory from your physical machine, using a client such as FileZilla. We're going tu use vsftpd (Very Secure FTP Daemon).
+FTP (File Transfer Protocol) is a classic bonus with real practical value. It allows you to upload and retrieve files (images, themes, plugins, etc.) directly into your WordPress directory from your physical machine, using a client such as FileZilla. We're going tu use **vsftpd** (Very Secure FTP Daemon).
 
-We will now create a secret for it:
+let's start by creating a secret for it:
 ```bash
 echo "your_ftp_password" > ~/inception/secrets/ftp_password.txt
 ```
@@ -1064,7 +1091,7 @@ EXPOSE 21 40000-40005
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 ```
 
-FTP requires a system user to operate. We create it dynamically at runtime with an `entrypoint.sh` file:
+**vsftpd** requires a system user to operate. We create it dynamically at runtime with an `entrypoint.sh` file:
 
 ```bash
 touch ~/inception/srcs/requirements/bonus/ftp/tools/entrypoint.sh
@@ -1163,46 +1190,50 @@ services:
       - "40000-40005:40000-40005"
 ```
 
-We will quickly test that the FTP service is working.
+It's time to rebuild your infrastructure using `make re` to apply the changes, and test the FTP service.
 
-If you chose Bridged mode:
+* If you chose **Bridged mode**:
 You can test it with the following command:
-```bash
-curl -u yourlogin:yourpassword ftp://your_vm_ip_address:21/a
-```
 
-If you chose NAT mode, you first have to create all these port forwarding rules :
+  ```bash
+  curl -u yourlogin:yourpassword ftp://your_vm_ip_address:21/a
+  ```
 
-| Name | Protocol | Host IP | Host Port | Guest IP | Guest Port |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| FTP-Command | TCP | 127.0.0.1 | 2121 | | 21 |
-| FTP-Pasv-0 | TCP | 127.0.0.1 | 40000 | | 40000 |
-| FTP-Pasv-1 | TCP | 127.0.0.1 | 40001 | | 40001 |
-| FTP-Pasv-2 | TCP | 127.0.0.1 | 40002 | | 40002 |
-| FTP-Pasv-3 | TCP | 127.0.0.1 | 40003 | | 40003 |
-| FTP-Pasv-4 | TCP | 127.0.0.1 | 40004 | | 40004 |
-| FTP-Pasv-5 | TCP | 127.0.0.1 | 40005 | | 40005 |
+* If you chose **NAT mode**, you first have to create all these port forwarding rules :
 
-Then, you can test it with the following command:
-```bash
-curl -u yourlogin:yourpassword ftp://127.0.0.1:2121/
-```
+  | Name | Protocol | Host IP | Host Port | Guest IP | Guest Port |
+  | :--- | :--- | :--- | :--- | :--- | :--- |
+  | FTP-Command | TCP | 127.0.0.1 | 2121 | | 21 |
+  | FTP-Pasv-0 | TCP | 127.0.0.1 | 40000 | | 40000 |
+  | FTP-Pasv-1 | TCP | 127.0.0.1 | 40001 | | 40001 |
+  | FTP-Pasv-2 | TCP | 127.0.0.1 | 40002 | | 40002 |
+  | FTP-Pasv-3 | TCP | 127.0.0.1 | 40003 | | 40003 |
+  | FTP-Pasv-4 | TCP | 127.0.0.1 | 40004 | | 40004 |
+  | FTP-Pasv-5 | TCP | 127.0.0.1 | 40005 | | 40005 |
+
+  Then, you can test it with the following command:
+
+  ```bash
+  curl -u yourlogin:yourpassword ftp://127.0.0.1:2121/
+  ```
 
 Alternatively, you can test the connection interactively using the `ftp` client with the following commands:
 
-```bash
-sudo apt update && sudo apt install -y ftp
-```
+  ```bash
+  sudo apt update && sudo apt install -y ftp
+  ```
 
-**And, if you chose Bridged mode:**
-```bash
-ftp your_vm_ip_address 21
-```
+* And, if you chose **Bridged mode:**
 
-**Or, if you chose NAT mode:**
-```bash
-ftp 127.0.0.1 2121
-```
+  ```bash
+  ftp your_vm_ip_address 21
+  ```
+
+* Or, if you chose **NAT mode:**
+
+  ```bash
+  ftp 127.0.0.1 2121
+  ```
 
 If the connection is successful, you should see a listing of the files in your WordPress directory.
 
@@ -1215,8 +1246,9 @@ This bonus consists of a simple static page served by a dedicated webserver cont
 Create the project structure:
 
 ```bash
-mkdir -p ~/inception/srcs/requirements/bonus/static/www
-mkdir -p ~/inception/srcs/requirements/bonus/static/conf
+mkdir -p \
+    ~/inception/srcs/requirements/bonus/static/www \
+    ~/inception/srcs/requirements/bonus/static/conf
 ```
 
 Let's create the `Dockerfile` for the static website:
@@ -1279,7 +1311,7 @@ Copy and paste the following code in it:
 </html>
 ```
 
-We will now configure the web server, lighttpd. Let's start with its configuration file:
+We will now configure the web server, **lighttpd**. Let's start with its configuration file:
 ```bash
 touch ~/inception/srcs/requirements/bonus/static/conf/lighttpd.conf
 ```
@@ -1328,7 +1360,8 @@ Do not forget the VirtualBox rule if you chose the NAT mode:
 |--------------|----------|-----------|-----------|----------|------------|
 | **Static**      | TCP      | 127.0.0.1 | 8081      |          | 8081         |
 
-Then open the following URL — make sure to use HTTP (not HTTPS):
+Rebuild your infrastructure using `make re` to apply the changes. To test the static website, open the following URL and make sure to use HTTP (not HTTPS):
+
 http://yourlogin.42.fr:8081
 
 ---
@@ -1403,7 +1436,11 @@ If you chose NAT mode, add the following VirtualBox NAT Rule:
 |--------------|----------|-----------|-----------|----------|------------|
 | **Adminer**      | TCP      | 127.0.0.1 | 8080      |          | 8080         |
 
-Rebuild your infrastructure using `make re`. Open your browser and go to http://yourlogin.42.fr:8080. You will be greeted by the Adminer login screen. Use the following credentials:
+Rebuild your infrastructure using `make re`. Open your browser and go to
+
+http://yourlogin.42.fr:8080
+
+You will be greeted by the Adminer login screen. Use the following credentials:
 * System: MySQL / MariaDB
 * Server: mariadb (This is the container name, Docker's internal DNS will resolve it)
 * Username: yourlogin
@@ -1523,8 +1560,8 @@ volumes:
       device: /home/yourlogin/data/arcane
 ```
 
-Then open the following URL — make sure to use HTTP (not HTTPS):
+Rebuild your infrastructure using `make re` and open the following URL — make sure to use HTTP (not HTTPS):
 
-[http://yourlogin.42.fr:3552](http://yourlogin.42.fr:3552)
+http://yourlogin.42.fr:3552
 
 Follow the setup instructions to create your admin account. The default username and password are `arcane` and `arcane-admin`. You can now see all your Inception containers (WordPress, NGINX, MariaDB) in a single dashboard.

@@ -535,7 +535,7 @@ https://docs.docker.com/compose/intro/compose-application-model/
 The configuration files (`Dockerfile`, `entrypoint.sh`, `nginx.conf`, etc.) need to be written according to the tutorial provided previously. Follow the setup code to place each `Dockerfile` internally correctly:
 
 
-**MariaDB**
+**MariaDB Setup**
 
 Create the `Dockerfile`:
 
@@ -619,7 +619,7 @@ fi
 exec "$@"
 ```
 
-**WordPress**
+**WordPress Setup**
 
 Create the `Dockerfile`:
 
@@ -746,7 +746,7 @@ fi
 exec "$@"
 ```
 
-**NGINX**
+**NGINX Setup**
 
 Create the `Dockerfile`:
 
@@ -909,14 +909,15 @@ https://nginx.org/en/docs/beginners_guide.html
 
 ### 11. Run the Project!
 
-Once everything is written and mapped out:
+Once everything is written and mapped out, run the following commands to install `make` and start the infrastructure:
+
 ```bash
-sudo apt update && sudo apt install make
+sudo apt update && sudo apt install -y make
 cd ~/inception
 make
 ```
 
-Your system is alive at `https://yourlogin.42.fr` (Accept self-signed certificates in your browser).
+Your system is alive at `https://yourlogin.42.fr` (Accept the self-signed certificate warning in your browser).
 
 ---
 
@@ -1192,14 +1193,15 @@ services:
 
 It's time to rebuild your infrastructure using `make re` to apply the changes, and test the FTP service.
 
-* If you chose **Bridged mode**:
-You can test it with the following command:
+* **If you chose Bridged mode:**
+    You can test it with the following command:
 
-  ```bash
-  curl -u yourlogin:yourpassword ftp://your_vm_ip_address:21/a
-  ```
+    ```bash
+    curl -u yourlogin:yourpassword ftp://your_vm_ip_address:21/a
+    ```
 
-* If you chose **NAT mode**, you first have to create all these port forwarding rules :
+* **If you chose NAT mode:**
+    You first have to create all these port forwarding rules:
 
   | Name | Protocol | Host IP | Host Port | Guest IP | Guest Port |
   | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -1218,21 +1220,20 @@ You can test it with the following command:
   ```
 
 Alternatively, you can test the connection interactively using the `ftp` client with the following commands:
-
   ```bash
   sudo apt update && sudo apt install -y ftp
   ```
 
-* And, if you chose **Bridged mode:**
+* **If you chose Bridged mode:**
 
-  ```bash
-  ftp your_vm_ip_address 21
-  ```
+    ```bash
+    ftp your_vm_ip_address 21
+    ```
 
-* Or, if you chose **NAT mode:**
+* **If you chose NAT mode:**
 
-  ```bash
-  ftp 127.0.0.1 2121
+    ```bash
+    ftp 127.0.0.1 2121
   ```
 
 If the connection is successful, you should see a listing of the files in your WordPress directory.

@@ -13,10 +13,17 @@ This document provides instructions for developers to set up, build, and maintai
 * Ensure port `443`, `8080`, `8081`, `3552`, and `21` are available on the host.
 
 ### Configuration Files and Secrets
-Before building the project, you must manually create the required credentials.
+
+Before building the project, you must manually set up the required configurations and secrets.
 
 1. **Environment Variables:**
-   Create a `.env` file inside the `srcs/` directory containing the configuration keys (e.g., `DOMAIN_NAME=gdosch.42.fr`, `MYSQL_DATABASE=wordpress`, etc.).
+   Copy the provided `.env.example` file to create your own `.env` file inside the `srcs/` directory:
+
+   ```bash
+   cp srcs/.env.example srcs/.env
+   ```
+
+   And fill it with your specific values.
 
 2. **Secrets:**
    Create a `secrets/` directory at the root of the project. Inside, create the following text files containing only the respective passwords/keys:

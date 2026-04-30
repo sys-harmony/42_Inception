@@ -395,19 +395,19 @@ cd ~/inception/secrets
 ```
 
 ```bash
-echo "your_db_password" > db_password.txt
+echo -n "your_db_password" > db_password.txt
 ```
 
 ```bash
-echo "your_db_root_password" > db_root_password.txt
+echo -n "your_db_root_password" > db_root_password.txt
 ```
 
 ```bash
-echo "your_wp_admin_password" > wp_admin_password.txt
+echo -n "your_wp_admin_password" > wp_admin_password.txt
 ```
 
 ```bash
-echo "your_wp_user_password" > wp_user_password.txt
+echo -n "your_wp_user_password" > wp_user_password.txt
 ```
 
 ---
@@ -950,7 +950,7 @@ Your system is alive at `https://yourlogin.42.fr` (Accept the self-signed certif
 ### Bonus 1: REDIS
 Redis is an excellent performance upgrade for your WordPress site. We will now create a secret for it. Type the following and replace `your_redis_password` with a password of your choice:
 ```bash
-echo "your_redis_password" > ~/inception/secrets/redis_password.txt 
+echo -n "your_redis_password" > ~/inception/secrets/redis_password.txt 
 ```
 
 Let's create the structure:
@@ -1076,7 +1076,7 @@ FTP (File Transfer Protocol) is a classic bonus with real practical value. It al
 
 let's start by creating a secret for it:
 ```bash
-echo "your_ftp_password" > ~/inception/secrets/ftp_password.txt
+echo -n "your_ftp_password" > ~/inception/secrets/ftp_password.txt
 ```
 
 Add your username at the end of the `.env` file:
@@ -1482,8 +1482,8 @@ Arcane is a modern, lightweight, and high-performance Docker management interfac
 
 We first need to create two new secrets:
 ```bash
-echo 'MaSuperCleDeChiffrement32Chars!!' > ~/inception/secrets/arc_encryption_key.txt
-echo 'MonAutreCleJWTTresSecrete424242!' > ~/inception/secrets/arc_jwt_secret.txt
+echo -n 'MaSuperCleDeChiffrement32Chars!!' > ~/inception/secrets/arc_encryption_key.txt
+echo -n 'MonAutreCleJWTTresSecrete424242!' > ~/inception/secrets/arc_jwt_secret.txt
 ```
 
 Create the necessary folders for the Arcane requirements:

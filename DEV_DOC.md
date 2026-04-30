@@ -1221,7 +1221,7 @@ It's time to rebuild your infrastructure using `make re` to apply the changes, a
     You can test it with the following command:
 
     ```bash
-    curl -u yourlogin:yourpassword ftp://your_vm_ip_address:21/a
+    curl -u yourlogin:yourpassword ftp://your_vm_ip_address:21/
     ```
 
 * **If you chose NAT mode:**

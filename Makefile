@@ -18,6 +18,7 @@ up: build
 down:
 	docker compose -f $(COMPOSE_FILE) down
 
+# Access the database command line
 mariadb:
 	docker exec -it mariadb mysql -u root -p
 

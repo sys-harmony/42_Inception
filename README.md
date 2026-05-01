@@ -27,9 +27,15 @@ For a quick start, navigate to the root of the repository and run:
 make
 ```
 
-This will build the images and start all services in the background. Please refer to the `DEV_DOC.md` and `USER_DOC.md` for detailed installation and usage instructions.
+This will build the images and start all services in the background. Please refer to the `DEV_DOC.md` and `USER_DOC.md` files for detailed installation and usage instructions.
 
 ## Resources
 * **Docker Documentation:** https://docs.docker.com/
-* **NGINX Configuration:** https://nginx.org/en/docs/
-* **Use of AI:** Artificial Intelligence (Google Gemini) was used during this project as a pedagogical assistant. It was primarily utilized to understand complex Docker networking concepts, generate efficient `sed` and `awk` commands for shell scripts, and review the security implementation of Docker Secrets. AI was also used to proofread and structure this documentation.
+* **Docker Compose Documentation:** https://docs.docker.com/compose/
+* **Docker Secrets:** https://docs.docker.com/engine/swarm/secrets/
+* **NGINX Documentation:** https://nginx.org/en/docs/
+* **MariaDB Documentation:** https://mariadb.com/kb/en/
+* **WordPress CLI:** https://wp-cli.org/
+* **Redis Documentation:** https://redis.io/documentation
+* **vsftpd Documentation:** https://security.appspot.com/vsftpd.html
+* **Use of AI:** Artificial Intelligence (Google Gemini) was used during this project as a pedagogical assistant. It was primarily utilized to understand complex Docker networking concepts and review the security implementation of Docker Secrets. AI was also used to proofread and structure this documentation.

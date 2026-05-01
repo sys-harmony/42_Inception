@@ -8,9 +8,21 @@ This document provides instructions for developers to set up, build, and maintai
 ## Environment Setup
 
 ### Prerequisites
-* Docker and Docker Compose (V2) must be installed on the host machine.
-* `make` must be installed.
-* Ensure port `443`, `8080`, `8081`, `3552`, and `21` are available on the host.
+Before setting up the environment, ensure the following requirements are met on the host machine:
+
+* Operating System: A stable version of Debian (v12 recommended).
+* Software:
+  * `docker` and `docker compose` (V2) must be installed and running.
+  * GNU `make` must be installed to execute the project's automation.
+  * `sudo` must be installed and configured for the current user.
+* Privileges: The user must have `sudo` privileges (required for volume management and port binding).
+* Ports Availability: Ensure the following ports are not occupied by other services on the host:
+  * `443` (NGINX/HTTPS)
+  * `8080` (Adminer)
+  * `8081` (Static Site)
+  * `3552` (Arcane)
+  * `21` & `40000-40005` (FTP)
+* Local DNS: You must have the ability to modify the `/etc/hosts` file to map `yourlogin.42.fr` to the host's IP.
 
 ### Configuration Files and Secrets
 
@@ -36,29 +48,44 @@ Before building the project, you must manually set up the required configuration
    * `arc_encryption_key.txt`
    * `arc_jwt_secret.txt`
 
-## Build and Launch
+## Makefile Targets
 The project is orchestrated using a `Makefile` situated at the root directory.
 
-* **`make`** or **`make all`**: Creates the necessary local directories for persistent storage (`/home/gdosch/data/...`), builds all Docker images using `docker compose build`, and starts the containers in detached mode.
-* **`make build`**: Only builds the images.
-* **`make up`**: Starts the existing containers in the background.
+### Build & Launch
+* `make` or `make all`: Creates the necessary local directories for persistent storage (`/home/gdosch/data/...`), builds all Docker images using `docker compose build`, and starts the containers in detached mode.
+* `make build`: Only builds the images.
+* `make up`: Starts the existing containers in the background.
 
-## Container and Volume Management
-* **`make down`**: Stops and removes the containers and the default network. Volumes are preserved.
-* **`make clean`**: Executes `make down` and runs `docker system prune -f` to clean up dangling resources.
-* **`make fclean`**: Executes a complete wipe. It removes containers, volumes, all images (`--rmi all`), clears the Docker cache, and forcefully deletes the local data directories (`sudo rm -rf /home/gdosch/data`).
-* **`make re`**: Executes `make fclean` followed by `make all` for a fresh start.
+### Cleanup & Maintenance
+* `make down`: Stops and removes the containers and the default network. Volumes are preserved.
+* `make clean`: Executes `make down` and runs `docker system prune -f` to clean up dangling resources.
+* `make fclean`: Executes a complete wipe. It removes containers, volumes, all images (`--rmi all`), clears the Docker cache, and forcefully deletes the local data directories (`sudo rm -rf /home/gdosch/data`).
+* `make re`: Executes `make fclean` followed by `make all` for a fresh start.
+* `make mariadb`: Opens an interactive MariaDB shell as root inside the database container for manual queries and verification.
+
+## Relevant Docker Commands
+While the `Makefile` automates the general workflow, you may need to use native Docker commands for deeper debugging and monitoring. Run these commands from the root of the project (where the `docker-compose.yml` is located):
+
+* `docker ps [-a]`: Displays all currently running containers. Add the `-a` flag to see all containers, including those that have crashed or stopped.
+* `docker logs [-f] <container>`: Displays the log history for a specific container. Add the `-f` flag to follow the logs in real time.
+* `docker exec -it <container> /bin/bash`: Access an interactive shell inside a container. This is extremely useful for verifying mounted files, checking permissions, or manually executing internal commands.
+* `docker stats`: Displays real-time CPU and memory usage for all containers.
+* `docker inspect <object>`: Inspect container, network, or volume details. This command outputs a JSON document containing low-level metadata such as internal IP addresses, mounted volume paths, network configuration, environment variables, and runtime state.
 
 ## Data Storage and Persistence
-To ensure data persists across container restarts and recreations, we use Docker volumes bound to specific host directories via driver options.
-All persistent data is stored on the host machine under `/home/gdosch/data/`.
+To ensure data persists across container restarts and recreations, we use Docker volumes bound to specific host directories via driver options. All persistent data is stored on the host machine under `/home/gdosch/data/`.
 
+### Persistence Mechanism
+Data is stored on the host machine to remain independent of the container's lifecycle:
 * `/home/gdosch/data/mariadb` -> Mapped to `/var/lib/mysql` (Database files)
 * `/home/gdosch/data/wordpress` -> Mapped to `/var/www/html` (Website core, themes, plugins, and static files)
 * `/home/gdosch/data/arcane` -> Mapped to `/app/data` (Monitoring data)
 
-## Full Setup Tutorial
+### Lifecycle of Data
+* `make down` / `make clean`: Containers are stopped/removed, but data persists in the host folders.
+* `make fclean`: This is a destructive command. It explicitly removes the host data directories to allow a true "from scratch" installation. This is intended for development resets or project submission cleanup.
 
+## Full Project Tutorial
 This comprehensive guide details every step required to recreate the entire Inception infrastructure from scratch, from the initial virtual machine setup to the final container deployment.
 
 > **Note on Naming Conventions:**  

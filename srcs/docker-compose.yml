@@ -60,7 +60,7 @@ services:
     networks:
       - inception
     ports:
-      - "443:443"
+      - "443:443" # Only HTTPS port is exposed to the host
 
   ftp:
     build: ./requirements/bonus/ftp
@@ -77,7 +77,7 @@ services:
       - inception
     ports:
       - "21:21"
-      - "40000-40005:40000-40005"
+      - "40000-40005:40000-40005" # Passive mode port range
 
   static:
     build: ./requirements/bonus/static
@@ -110,6 +110,7 @@ services:
       - arc_encryption_key
       - arc_jwt_secret
     volumes:
+      # Allows Arcane to interact with the host Docker daemon
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - arcane_data:/app/data
     networks:
@@ -117,6 +118,7 @@ services:
     ports:
       - "3552:3552"
 
+# Docker Secrets: Files are mounted as temporary files inside /run/secrets/ in containers
 secrets:
   db_password:
     file: ../secrets/db_password.txt
@@ -137,8 +139,9 @@ secrets:
 
 networks:
   inception:
-    driver: bridge
+    driver: bridge # Standard bridge network for inter-container communication (default mode)
 
+# Named volumes configured as bind-mounts to specific host paths
 volumes:
   mariadb_data:
     driver_opts:

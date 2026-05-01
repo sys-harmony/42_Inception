@@ -18,6 +18,11 @@ RUN chmod +x /usr/local/bin/arcane
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# Expose port 3552
 EXPOSE 3552
 
+# Prepares the environment (secrets) before launching the application
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Default binary executed as PID 1 via the entrypoint's 'exec "$@"'
+CMD ["arcane"]

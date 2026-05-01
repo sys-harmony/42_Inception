@@ -15,7 +15,7 @@ RUN mkdir -p /var/www/html
 # We rename it to index.php so the server loads it by default
 RUN wget https://www.adminer.org/latest.php -O /var/www/html/index.php
 
-# Ensure proper permissions (optional but good practice)
+# Ensure proper permissions
 RUN chown -R www-data:www-data /var/www/html
 
 # Set the working directory
@@ -24,5 +24,5 @@ WORKDIR /var/www/html
 # Expose port 8080
 EXPOSE 8080
 
-# Start PHP's built-in web server listening on all interfaces
+# Start PHP's built-in web server listening on all interfaces (PID 1)
 CMD ["php", "-S", "0.0.0.0:8080", "-t", "/var/www/html"]

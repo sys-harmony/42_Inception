@@ -3,23 +3,35 @@
 # Stop the script immediately if any command fails
 set -e
 
-# 1. Fetch the secret from the Docker secret mount point
-FTP_PWD=$(cat /run/secrets/ftp_password)
+# 1. Fetch secrets from Docker secret mount points
+FTP_PASSWORD=$(cat /run/secrets/ftp_password)
 
-# 2. Create the FTP user if it doesn't exist
-# We use the environment variable FTP_USER from the .env file
+# 2. Fail-fast validation
+if [ -z "$FTP_USER" ] || [ -z "$FTP_PASSWORD" ]; then
+    echo "Error: FTP_USER or ftp_password secret is missing." >&2
+    exit 1
+fi
+
+# 3. User Creation and Permissions
+# Create the FTP user if it doesn't exist and set their password
 if ! id "$FTP_USER" >/dev/null 2>&1; then
-    echo "Creating FTP user: $FTP_USER..."
-    useradd -m -s /bin/bash "$FTP_USER"
-    echo "$FTP_USER:$FTP_PWD" | chpasswd
-    
-    # Set the home directory to the WordPress volume path
+    useradd -m -d /var/www/html -s /bin/bash "$FTP_USER"
+    echo "$FTP_USER:$FTP_PASSWORD" | chpasswd
+else
     usermod -d /var/www/html "$FTP_USER"
 fi
 
-# 3. Configuration for vsftpd
-# We generate the config file dynamically to ensure correct settings
-cat << EOF > /etc/vsftpd.conf
+# Ensure the webroot is owned by the FTP user for upload capabilities
+echo "Setting permissions for /var/www/html..."
+chown -R "$FTP_USER:$FTP_USER" /var/www/html
+chmod -R 755 /var/www/html
+
+# 4. Prepare the runtime environment
+# vsftpd requires this specific directory to run for isolation (chroot)
+mkdir -p /var/run/vsftpd/empty
+
+# Generate the vsftpd configuration used by the container
+cat <<EOF > /etc/vsftpd.conf
 # Run in the foreground (required for Docker containers)
 listen=YES
 listen_ipv6=NO
@@ -41,17 +53,9 @@ pasv_max_port=40005
 pasv_address=0.0.0.0
 EOF
 
-# 4. Fix permissions
-# WordPress files often belong to www-data. We ensure our FTP user 
-# can actually modify/delete them by taking ownership.
-echo "Setting permissions for /var/www/html..."
-chown -R "$FTP_USER:$FTP_USER" /var/www/html
-chmod -R 755 /var/www/html
-
-# 5. Prepare the runtime environment
-mkdir -p /var/run/vsftpd/empty
-
 echo "Starting FTP server for user: $FTP_USER"
 
-# 6. Run vsftpd with the generated configuration
-exec vsftpd /etc/vsftpd.conf
+# 5. Execute the command from CMD
+# 'exec' replaces the shell with the vsftpd process so it becomes PID 1.
+# This ensures it receives SIGTERM signals directly for a clean shutdown.
+exec "$@"

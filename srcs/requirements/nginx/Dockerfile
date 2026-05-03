@@ -4,9 +4,9 @@ FROM debian:12
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Update the system and install NGINX and OpenSSL
+# Install NGINX, OpenSSL (certificates), and wget (Docker healthcheck)
 RUN apt-get update && apt-get install -y \
-	nginx openssl && \
+	nginx openssl wget && \
 	rm -rf /var/lib/apt/lists/*
 
 # Copy the NGINX configuration file into the container

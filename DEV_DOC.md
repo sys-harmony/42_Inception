@@ -456,16 +456,31 @@ Then copy the following configuration into it:
 ```yaml
 name: inception
 
+# YAML Anchor to standardize logging across all services
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   mariadb:
-    build: ./requirements/mariadb
-    image: mariadb
+    build:
+      context: ./requirements/mariadb
+    image: mariadb:inception-v1
     container_name: mariadb
-    restart: always
+    restart: unless-stopped
+    healthcheck:
+      # We use the root secret directly since MYSQL_PASSWORD environment variable isn't set
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$(cat /run/secrets/db_root_password) --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     environment:
-      - MYSQL_DATABASE=\${MYSQL_DATABASE}
-      - MYSQL_USER=\${MYSQL_USER}
-      - MYSQL_HOSTNAME=\${MYSQL_HOSTNAME}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_HOSTNAME=${MYSQL_HOSTNAME}
     secrets:
       - db_password
       - db_root_password
@@ -473,39 +488,61 @@ services:
       - mariadb_data:/var/lib/mysql
     networks:
       - inception
+    logging: *default-logging
 
   wordpress:
-    build: ./requirements/wordpress
-    image: wordpress
+    build:
+      context: ./requirements/wordpress
+    image: wordpress:inception-v1
     container_name: wordpress
-    restart: always
+    restart: unless-stopped
     depends_on:
-      - mariadb
+      mariadb:
+        condition: service_healthy
+    healthcheck:
+      # pgrep is more flexible regarding the exact php-fpm binary name
+      test: ["CMD-SHELL", "pgrep php-fpm > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s # Gives wp-cli enough time to download and install everything during the first boot
     env_file: .env
     secrets:
       - db_password
+      - redis_password
       - wp_admin_password
       - wp_user_password
     volumes:
       - wordpress_data:/var/www/html
     networks:
       - inception
+    logging: *default-logging
 
   nginx:
-    build: ./requirements/nginx
-    image: nginx
+    build:
+      context: ./requirements/nginx
+    image: nginx:inception-v1
     container_name: nginx
-    restart: always
+    restart: unless-stopped
     depends_on:
-      - wordpress
+      wordpress:
+        condition: service_healthy
+    healthcheck:
+      # Verifies the web server is actually serving the page over HTTPS
+      test: ["CMD-SHELL", "wget --no-check-certificate --spider https://localhost || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s # Safety buffer for SSL generation and config loading
     environment:
-      - DOMAIN_NAME=\${DOMAIN_NAME}
+      - DOMAIN_NAME=${DOMAIN_NAME}
     volumes:
-      - wordpress_data:/var/www/html
+      - wordpress_data:/var/www/html:ro
     networks:
       - inception
     ports:
       - "443:443" # Only HTTPS port is exposed to the host
+    logging: *default-logging
 
 # Docker Secrets: Files are mounted as temporary files inside /run/secrets/ in containers
 secrets:
@@ -1127,29 +1164,42 @@ echo "Starting Redis server..."
 exec redis-server --bind 0.0.0.0 --requirepass "$REDIS_PASSWORD" --protected-mode no
 ```
 
-Now we must update the `docker-compose.yml` file. Add the redis_password secret and the service configuration:
+To ensure a deterministic startup and service health monitoring, we update the `docker-compose.yml` as follows:
 ```yaml
-# Add the 'redis' service
+# 1. Update the 'wordpress' service and add the 'redis' one
 services:
   # ... other services
-  redis:
-    build: ./requirements/bonus/redis
-    image: redis
-    container_name: redis
-    restart: always
-    secrets:
-      - redis_password
-    networks:
-      - inception
-
-# Add the new secret
   wordpress:
-    # ... other configs (env_file, networks, etc.)
+    # ... other configs
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # ... other configs
     secrets:
       - db_password
       - redis_password
       - wp_admin_password
       - wp_user_password
+  # ...
+  redis:
+    build:
+      context: ./requirements/bonus/redis
+    image: redis:inception-v1
+    container_name: redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -h 127.0.0.1 -a \"$$(cat /run/secrets/redis_password)\" ping | grep PONG || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    secrets:
+      - redis_password
+    networks:
+      - inception
+    logging: *default-logging
 
 # 2. Add this in the main 'secrets' section at the bottom
 secrets:
@@ -1314,10 +1364,11 @@ It is now time to update the `docker-compose.yml` file:
 services:
   # ... other services
   ftp:
-    build: ./requirements/bonus/ftp
-    image: ftp
+    build:
+      context: ./requirements/bonus/ftp
+    image: ftp:inception-v1
     container_name: ftp
-    restart: always
+    restart: unless-stopped
     environment:
       - FTP_USER=${FTP_USER}
     secrets:
@@ -1329,6 +1380,7 @@ services:
     ports:
       - "21:21"
       - "40000-40005:40000-40005" # Passive mode port range
+    logging: *default-logging
 
 # 2. Add this to the main 'secrets' section at the bottom
 secrets:
@@ -1501,14 +1553,16 @@ We need to update the docker-compose.yml file and map the host port 8081 to the 
 services:
   # ... other services
   static:
-    build: ./requirements/bonus/static
-    image: static
+    build:
+      context: ./requirements/bonus/static
+    image: static:inception-v1
     container_name: static
-    restart: always
+    restart: unless-stopped
     networks:
       - inception
     ports:
       - "8081:80"
+    logging: *default-logging
 ```
 
 Do not forget the VirtualBox rule if you chose the NAT mode:
@@ -1576,16 +1630,19 @@ We must update the `docker-compose.yml` file and add the Adminer service. We map
 services:
   # ... other services
   adminer:
-    build: ./requirements/bonus/adminer
-    image: adminer
+    build:
+      context: ./requirements/bonus/adminer
+    image: adminer:inception-v1
     container_name: adminer
-    restart: always
+    restart: unless-stopped
     depends_on:
-      - mariadb
+      mariadb:
+        condition: service_healthy
     networks:
       - inception
     ports:
       - "8080:8080"
+    logging: *default-logging
 ```
 
 If you chose NAT mode, add the following VirtualBox NAT Rule:
@@ -1695,24 +1752,27 @@ exec "$@"
 
 Add the service and the secrets declaration to your `docker-compose.yml`:
 ```yaml
-# Add the 'adminer' service
+# Add the 'arcane' service
 services:
   # ... other services
   arcane:
-    build: ./requirements/bonus/arcane
-    image: arcane
+    build:
+      context: ./requirements/bonus/arcane
+    image: arcane:inception-v1
     container_name: arcane
-    restart: always
+    restart: unless-stopped
     secrets:
       - arc_encryption_key
       - arc_jwt_secret
     volumes:
+      # Allows Arcane to interact with the host Docker daemon
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - arcane_data:/app/data
     networks:
       - inception
     ports:
       - "3552:3552"
+    logging: *default-logging
 
 # Add to your secrets section at the bottom
 secrets:

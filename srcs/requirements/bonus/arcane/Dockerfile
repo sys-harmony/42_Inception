@@ -1,5 +1,5 @@
 # Stage 1: Temporary stage to get the binary
-FROM ghcr.io/getarcaneapp/arcane:latest AS builder
+FROM ghcr.io/getarcaneapp/arcane:v1.18.1 AS builder
 
 # Stage 2: Final image based on Debian 12
 FROM debian:12
@@ -7,6 +7,7 @@ FROM debian:12
 # Install requirements
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 
+# Setup application directory
 WORKDIR /app
 RUN mkdir -p /app/data
 

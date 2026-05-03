@@ -5,8 +5,8 @@ FROM debian:12
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Update the system and install NGINX and OpenSSL
-RUN apt-get update && \
-	apt-get install -y nginx openssl && \
+RUN apt-get update && apt-get install -y \
+	nginx openssl && \
 	rm -rf /var/lib/apt/lists/*
 
 # Copy the NGINX configuration file into the container

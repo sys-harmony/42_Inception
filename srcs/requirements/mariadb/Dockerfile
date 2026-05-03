@@ -5,8 +5,8 @@ FROM debian:12
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Update the system and install MariaDB server and client
-RUN apt-get update && \
-	apt-get install -y mariadb-server mariadb-client && \
+RUN apt-get update && apt-get install -y \
+	mariadb-server mariadb-client && \
 	rm -rf /var/lib/apt/lists/*
 
 # Create required directories for the database and the socket
@@ -15,7 +15,7 @@ RUN mkdir -p /var/lib/mysql /run/mysqld && \
 	chown -R mysql:mysql /var/lib/mysql /run/mysqld
 
 # Copy the initialization script to the container
-COPY tools/entrypoint.sh /usr/local/bin/
+COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Expose the default MariaDB port

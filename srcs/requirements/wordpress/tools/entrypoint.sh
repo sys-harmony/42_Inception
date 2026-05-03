@@ -30,14 +30,14 @@ if [ -z "$DOMAIN_NAME" ] || [ -z "$WP_TITLE" ] || [ -z "$WP_USER" ] || [ -z "$WP
     exit 1
 fi
 
-# 3. Wait for MariaDB to be ready
+# 3. Service Initialization & Dependencies
 # Service availability check: ensures the database is up before running WP-CLI commands
 echo "Waiting for MariaDB to be ready..."
 until mysql -h"$MYSQL_HOSTNAME" -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
     sleep 2
 done
 
-# 4. WordPress Installation Logic
+# 4. WordPress & Redis Configuration Logic
 # Skips if wp-config.php exists (persistence check for already initialized volumes)
 if [ ! -f "/var/www/html/wp-config.php" ]; then
     echo "WordPress not found. Starting installation..."

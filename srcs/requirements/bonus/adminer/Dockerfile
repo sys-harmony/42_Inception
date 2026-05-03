@@ -3,17 +3,15 @@ FROM debian:12
 
 # Install wget (to download Adminer), PHP, and the PHP-MySQL extension
 RUN apt-get update && apt-get install -y \
-	wget \
-	php \
-	php-mysql \
-	&& rm -rf /var/lib/apt/lists/*
+	wget php php-mysql && \
+	rm -rf /var/lib/apt/lists/*
 
 # Create the web directory
 RUN mkdir -p /var/www/html
 
-# Download the latest version of Adminer directly into the web directory
+# Download Adminer directly into the web directory
 # We rename it to index.php so the server loads it by default
-RUN wget https://www.adminer.org/latest.php -O /var/www/html/index.php
+RUN wget https://github.com/vrana/adminer/releases/download/v5.4.2/adminer-5.4.2.php -O /var/www/html/index.php
 
 # Ensure proper permissions
 RUN chown -R www-data:www-data /var/www/html

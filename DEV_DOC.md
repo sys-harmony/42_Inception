@@ -56,11 +56,14 @@ The project is orchestrated using a `Makefile` situated at the root directory.
 * `make build`: Only builds the images.
 * `make up`: Starts the existing containers in the background.
 
+### Database Access
+* `make mariadb`: Opens an interactive MariaDB shell as root inside the database container for manual queries and verification.
+
 ### Cleanup & Maintenance
 * `make down`: Stops and removes the containers and the default network. Volumes are preserved.
-* `make clean`: Executes `make down` and runs `docker system prune -f` to clean up dangling resources.
-* `make fclean`: Executes a complete wipe. It removes containers, volumes, all images (`--rmi all`), clears the Docker cache, and forcefully deletes the local data directories (`sudo rm -rf /home/gdosch/data`).
-* `make re`: Executes `make fclean` followed by `make all` for a fresh start.
+* `make clean`: Executes `make down` and runs `docker system prune -f` to clean up dangling resources (stopped containers, dangling networks).
+* `make fclean`: Executes a complete wipe with safeguards. It removes all containers, networks, volumes, and images (`--rmi all`), clears the entire Docker cache, and verifies `DATA_PATH` safety before forcefully deleting local data directories (`sudo rm -rf /home/gdosch/data`). This prevents accidental system damage from misconfiguration.
+* `make re`: Executes `make fclean` followed by `make all` for a complete fresh rebuild from scratch.
 * `make mariadb`: Opens an interactive MariaDB shell as root inside the database container for manual queries and verification.
 
 ## Relevant Docker Commands
@@ -388,10 +391,10 @@ mkdir -p \
 Secure the repository by ignoring secrets and `.env`:
 ```bash
 cat << 'EOF' > ~/inception/.gitignore
-# Ignore the secrets directory
+# Ignore the secrets directory (passwords)
 secrets/
 
-# Ignore environment files
+# Ignore the environment file(s) (variables)
 .env
 EOF
 ```
@@ -400,10 +403,12 @@ To create the `.env` file in `srcs` with the following configuration, type:
 ```bash
 cat << 'EOF' > ~/inception/srcs/.env
 DOMAIN_NAME=yourlogin.42.fr
+
 # MYSQL SETUP
 MYSQL_USER=yourlogin
 MYSQL_DATABASE=wordpress
 MYSQL_HOSTNAME=mariadb
+
 # WORDPRESS SETUP
 WP_TITLE=Inception
 WP_ADMIN_USER=yourlogin
@@ -495,13 +500,14 @@ services:
       - wordpress
     environment:
       - DOMAIN_NAME=\${DOMAIN_NAME}
-    ports:
-      - "443:443"
     volumes:
       - wordpress_data:/var/www/html
     networks:
       - inception
+    ports:
+      - "443:443" # Only HTTPS port is exposed to the host
 
+# Docker Secrets: Files are mounted as temporary files inside /run/secrets/ in containers
 secrets:
   db_password:
     file: ../secrets/db_password.txt
@@ -514,8 +520,9 @@ secrets:
 
 networks:
   inception:
-    driver: bridge
+    driver: bridge # Standard bridge network for inter-container communication (default mode)
 
+# Named volumes configured as bind-mounts to specific host paths
 volumes:
   mariadb_data:
     driver_opts:
@@ -540,38 +547,50 @@ touch ~/inception/Makefile
 And copy the following into it and make sure to use actual Tabs instead of spaces for indentation:
 
 ```makefile
-DATA_PATH = /home/yourlogin/data
+DATA_PATH = /home/gdosch/data
 COMPOSE_FILE = srcs/docker-compose.yml
 
-.PHONY: all build up down clean fclean re
+.PHONY: all build up down mariadb clean fclean re
 
 all: up
 
 # Create local storage directories and build images
 build:
-	@mkdir -p \$(DATA_PATH)/mariadb \$(DATA_PATH)/wordpress \$(DATA_PATH)/arcane
-	docker compose -f \$(COMPOSE_FILE) build
+	@mkdir -p $(DATA_PATH)/mariadb $(DATA_PATH)/wordpress
+	docker compose -f $(COMPOSE_FILE) build
 
 # Start containers in detached mode
 up: build
-	docker compose -f \$(COMPOSE_FILE) up -d
+	docker compose -f $(COMPOSE_FILE) up -d
 
 # Stop running containers
 down:
-	docker compose -f \$(COMPOSE_FILE) down
+	docker compose -f $(COMPOSE_FILE) down
 
+# Access the database command line
 mariadb:
 	docker exec -it mariadb mysql -u root -p
 
-# Remove containers and networks
+# Standard cleanup: removes stopped containers and dangling resources (cache, networks)
 clean: down
 	@docker system prune -f
 
-# Full cleanup: removes images, volumes, docker cache, AND data directories
+# Full cleanup: total wipe of the Docker environment and local data
 fclean: 
-	docker compose -f \$(COMPOSE_FILE) down -v --rmi all
+#   Removes all containers, networks, volumes, and images defined in the project
+	docker compose -f $(COMPOSE_FILE) down -v --rmi all
+
+#   Deep clean: removes all unused images and entire build cache (including non-dangling)
 	@docker system prune -af
-	@sudo rm -rf \$(DATA_PATH)
+
+#   Security check: ensures DATA_PATH is set and is not the root directory to prevent system damage
+	@if [ -z "$(DATA_PATH)" ] || [ "$(DATA_PATH)" = "/" ]; then \
+		echo "Error: DATA_PATH is empty or set to root. Aborting wipe."; \
+		exit 1; \
+	fi
+
+#   Requires sudo password to securely delete persistent data from the host
+	@sudo rm -rf $(DATA_PATH)
 
 # Complete rebuild from scratch
 re: fclean all
@@ -600,21 +619,32 @@ And copy the following in it:
 # Use the stable Debian Bookworm as base image
 FROM debian:12
 
+# Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && \
-	apt-get install -y mariadb-server mariadb-client && \
+# Update the system and install MariaDB server and client
+RUN apt-get update && apt-get install -y \
+	mariadb-server mariadb-client && \
 	rm -rf /var/lib/apt/lists/*
 
+# Create required directories for the database and the socket
+# and ensure the 'mysql' user owns them
 RUN mkdir -p /var/lib/mysql /run/mysqld && \
 	chown -R mysql:mysql /var/lib/mysql /run/mysqld
 
-COPY tools/entrypoint.sh /usr/local/bin/
+# Copy the initialization script to the container
+COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# Expose the default MariaDB port
 EXPOSE 3306
 
+# Define the script that will handle the initial setup
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Default command executed by the entrypoint script (PID 1)
+# We must specify --user=mysql to avoid the "run as root" error
+# --bind-address=0.0.0.0 allows connections from other containers
 CMD ["mysqld", "--user=mysql", "--bind-address=0.0.0.0"]
 ```
 
@@ -632,26 +662,33 @@ And copy the following in it:
 # Stop the script immediately if any command fails
 set -e
 
-# 1. Fetch secrets from Docker secret mount points
+# 1. Fetch secrets from Docker secret mount points (RAM-only files)
+# This avoids passing sensitive passwords through environment variables
 MYSQL_ROOT_PASSWORD=$(cat /run/secrets/db_root_password)
 MYSQL_PASSWORD=$(cat /run/secrets/db_password)
 
 # 2. Fail-fast validation
+# Ensures all necessary credentials are present before attempting installation
 if [ -z "$MYSQL_ROOT_PASSWORD" ] || [ -z "$MYSQL_DATABASE" ] || [ -z "$MYSQL_USER" ] || [ -z "$MYSQL_PASSWORD" ]; then
     echo "Error: Missing mandatory database environment variables or secrets." >&2
     exit 1
 fi
 
 # 3. MariaDB Installation Logic
+# Only run initialization if the command passed is 'mysqld'
 if [ "$1" = 'mysqld' ]; then
-    # Marker file check to prevent re-initialization
+    # Custom marker file check to ensure persistence (skips if already initialized)
     if [ ! -f "/var/lib/mysql/.initialized" ]; then
         echo "Initializing MariaDB database..."
 
+        # Ensure the mysql user owns the data directory for proper permissions
         chown -R mysql:mysql /var/lib/mysql
+
+        # Create system tables and initial database structure
         mysql_install_db --user=mysql --datadir=/var/lib/mysql > /dev/null
 
         # Use bootstrap to configure users and database privileges
+        # This executes SQL commands without starting the full network server
         mysqld --user=mysql --datadir=/var/lib/mysql --bootstrap <<EOF
 FLUSH PRIVILEGES;
 ALTER USER 'root'@'localhost' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}';
@@ -660,13 +697,15 @@ CREATE USER IF NOT EXISTS '${MYSQL_USER}'@'%' IDENTIFIED BY '${MYSQL_PASSWORD}';
 GRANT ALL PRIVILEGES ON ${MYSQL_DATABASE}.* TO '${MYSQL_USER}'@'%';
 FLUSH PRIVILEGES;
 EOF
-        # Create the marker file to confirm success
+        # Create the marker file to confirm successful first-time setup
         touch /var/lib/mysql/.initialized
         echo "MariaDB initialized successfully."
     fi
 fi
 
-# 4. Execute the command from CMD (PID 1)
+# 4. Execute the command from CMD
+# 'exec' replaces the shell with the MariaDB process so it becomes PID 1.
+# This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec "$@"
 ```
 
@@ -684,31 +723,42 @@ And copy the following in it:
 # Use Debian Bookworm as the base image
 FROM debian:12
 
+# Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && \
-	apt-get install -y \
+# Update and install PHP-FPM, MySQL extensions, and required tools
+RUN apt-get update && apt-get install -y \
 	php8.2-fpm php8.2-mysql php8.2-curl php8.2-gd php8.2-intl \
-	php8.2-mbstring php8.2-xml php8.2-zip wget mariadb-client ca-certificates && \
+	php8.2-mbstring php8.2-xml php8.2-zip \
+	wget mariadb-client ca-certificates && \
 	rm -rf /var/lib/apt/lists/*
 
+# Install WP-CLI (WordPress Command Line Interface)
 RUN wget https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && \
 	chmod +x wp-cli.phar && \
 	mv wp-cli.phar /usr/local/bin/wp
 
+# Create directory for PHP-FPM runtime files and set correct permissions
 RUN mkdir -p /run/php && \
 	chown -R www-data:www-data /run/php
 
+# Configure PHP-FPM to listen on port 9000 instead of a Unix socket for network communication
 RUN sed -i 's|listen = /run/php/php8.2-fpm.sock|listen = 9000|' /etc/php/8.2/fpm/pool.d/www.conf
 
+# Set the working directory to the web root
 WORKDIR /var/www/html
 
+# Copy the entrypoint script into the container
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# Expose the PHP-FPM port
 EXPOSE 9000
 
+# Set the entrypoint script to handle setup at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Default command executed by the entrypoint script (PID 1)
 CMD ["php-fpm8.2", "-F"]
 ```
 
@@ -727,11 +777,14 @@ And copy the following in it:
 set -e
 
 # 1. Fetch secrets from Docker secret mount points
+# Retrieves sensitive credentials from Docker secret files
 MYSQL_PASSWORD=$(cat /run/secrets/db_password)
 WP_ADMIN_PASSWORD=$(cat /run/secrets/wp_admin_password)
 WP_USER_PASSWORD=$(cat /run/secrets/wp_user_password)
 
 # 2. Fail-fast validation
+# Ensures all necessary credentials are present before attempting installation
+
 # Database checks
 if [ -z "$MYSQL_HOSTNAME" ] || [ -z "$MYSQL_DATABASE" ] || [ -z "$MYSQL_USER" ] || [ -z "$MYSQL_PASSWORD" ]; then
     echo "Error: Missing database environment variables or secrets." >&2
@@ -750,20 +803,22 @@ if [ -z "$DOMAIN_NAME" ] || [ -z "$WP_TITLE" ] || [ -z "$WP_USER" ] || [ -z "$WP
     exit 1
 fi
 
-# 3. Wait for MariaDB to be ready
+# 3. Service Initialization & Dependencies
+# Service availability check: ensures the database is up before running WP-CLI commands
 echo "Waiting for MariaDB to be ready..."
 until mysql -h"$MYSQL_HOSTNAME" -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
     sleep 2
 done
 
-# 4. WordPress Installation Logic
+# 4. WordPress & Redis Configuration Logic
+# Skips if wp-config.php exists (persistence check for already initialized volumes)
 if [ ! -f "/var/www/html/wp-config.php" ]; then
     echo "WordPress not found. Starting installation..."
 
-    # Download WordPress core files
+    # Downloads the WordPress core files
     wp core download --allow-root
 
-    # Create wp-config.php dynamically
+    # Generates wp-config.php with provided database credentials
     wp config create \
         --dbname="$MYSQL_DATABASE" \
         --dbuser="$MYSQL_USER" \
@@ -771,7 +826,7 @@ if [ ! -f "/var/www/html/wp-config.php" ]; then
         --dbhost="$MYSQL_HOSTNAME" \
         --allow-root
 
-    # Install WordPress and set up the administrator account
+    # Configures the database and creates the primary administrator account
     wp core install \
         --url="https://$DOMAIN_NAME" \
         --title="$WP_TITLE" \
@@ -781,20 +836,25 @@ if [ ! -f "/var/www/html/wp-config.php" ]; then
         --skip-email \
         --allow-root
 
-    # Create the mandatory secondary user
+    # Creates the mandatory non-administrator user required by the subject
     wp user create "$WP_USER" "$WP_USER_EMAIL" \
         --role=author \
         --user_pass="$WP_USER_PASSWORD" \
         --allow-root
 
-    # Fix ownership and permissions for the web server user
+    # Note: If implementing the Redis bonus, inject the configuration logic here.
+
+    # Finalizes file permissions for the web server (www-data)
     chown -R www-data:www-data /var/www/html
     chmod -R 755 /var/www/html
     echo "WordPress installed successfully."
 fi
 
-# 5. Execute the command from CMD (PID 1)
+# 5. Execute the command from CMD
+# 'exec' replaces the shell with the PHP-FPM process so it becomes PID 1.
+# This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec "$@"
+
 ```
 
 **NGINX Setup**
@@ -811,20 +871,28 @@ And copy the following in it:
 # Use Debian Bookworm as the base image
 FROM debian:12
 
+# Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && \
-	apt-get install -y nginx openssl && \
+# Update the system and install NGINX and OpenSSL
+RUN apt-get update && apt-get install -y \
+	nginx openssl && \
 	rm -rf /var/lib/apt/lists/*
 
+# Copy the NGINX configuration file into the container
 COPY conf/nginx.conf /etc/nginx/nginx.conf
 
+# Copy the entrypoint script and make it executable
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# Expose port 443 for HTTPS traffic
 EXPOSE 443
 
+# Define the script that will handle the initial setup
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Run NGINX in the foreground so the container doesn't exit
 CMD ["nginx", "-g", "daemon off;"]
 ```
 
@@ -843,35 +911,38 @@ And copy the following in it:
 set -e
 
 # 1. Fail-fast validation
+# Ensures DOMAIN_NAME is set before generating certificates
 if [ -z "$DOMAIN_NAME" ]; then
     echo "[ERROR] DOMAIN_NAME environment variable is missing." >&2
     exit 1
 fi
 
 # 2. Dynamic Configuration Injection
-# We replace the placeholder in nginx.conf with your actual domain name
+# Replaces the placeholder in the template with the actual domain name at runtime
 echo "[INFO] Configuring NGINX for domain: $DOMAIN_NAME"
 sed -i "s/__DOMAIN_NAME__/$DOMAIN_NAME/g" /etc/nginx/nginx.conf
 
 # 3. SSL Certificate Generation
-# We generate a self-signed certificate if it doesn't exist yet
+# Creates a self-signed certificate if not present (persistence check)
 CERTS_DIR="/etc/nginx/ssl"
 
 if [ ! -f "$CERTS_DIR/$DOMAIN_NAME.crt" ]; then
     echo "[INFO] Generating self-signed SSL certificate..."
-   
+    
     mkdir -p "$CERTS_DIR"
-   
-    # Generate the key and certificate valid for 365 days
+    
+    # Generate a non-interactive RSA 2048-bit key and certificate valid for 365 days
     openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
         -keyout "$CERTS_DIR/$DOMAIN_NAME.key" \
         -out "$CERTS_DIR/$DOMAIN_NAME.crt" \
         -subj "/C=FR/ST=GrandEst/L=Mulhouse/O=42/OU=Inception/CN=$DOMAIN_NAME"
-       
+        
     echo "[INFO] SSL certificate generated successfully."
 fi
 
-# 4. Execute the command from CMD (PID 1)
+# 4. Execute the command from CMD
+# 'exec' replaces the shell with the NGINX process so it becomes PID 1.
+# This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec "$@"
 ```
 
@@ -955,7 +1026,7 @@ http {
             fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         }
 
-        # Deny access to all hidden files (like .htaccess, .env)
+        # Security: deny access to all hidden files (like .htaccess, .env)
         location ~ /\. {
             deny all;
         }
@@ -1009,18 +1080,20 @@ FROM debian:12
 
 # Install redis-server
 RUN apt-get update && apt-get install -y \
-    redis-server \
-    && rm -rf /var/lib/apt/lists/*
+	redis-server \
+	&& rm -rf /var/lib/apt/lists/*
 
-# Copy the entrypoint script
+# Copy and prepare the entrypoint script
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Expose the default Redis port
 EXPOSE 6379
 
-# Define the entrypoint and default command
+# Prepares the environment (secrets) before launching the application
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Redis is started by the entrypoint with the runtime secret applied
 ```
 
 Now it's time to create the `entrypoint.sh` file for Redis:
@@ -1036,10 +1109,11 @@ Copy and paste the following configuration in it:
 # Stop the script immediately if any command fails
 set -e
 
-# Fetch the secret
+# 1. Fetch the secret from Docker secret mount point
+# Retrieves the password from the Docker secret file
 REDIS_PASSWORD=$(cat /run/secrets/redis_password)
 
-# Validation
+# 2. Fail-fast validation
 if [ -z "$REDIS_PASSWORD" ]; then
     echo "Error: REDIS_PASSWORD secret is missing." >&2
     exit 1
@@ -1047,20 +1121,17 @@ fi
 
 echo "Starting Redis server..."
 
-# Start Redis and bind it to all interfaces so WordPress can connect
-# --requirepass secures Redis with our secret
+# 3. Start Redis with the secret fetched above
+# 'exec' replaces the shell with the Redis process so it becomes PID 1.
+# This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec redis-server --bind 0.0.0.0 --requirepass "$REDIS_PASSWORD" --protected-mode no
 ```
 
 Now we must update the `docker-compose.yml` file. Add the redis_password secret and the service configuration:
 ```yaml
-# Add this in the main 'secrets' section at the bottom
-secrets:
-  # ... your other secrets
-  redis_password:
-    file: ../secrets/redis_password.txt
-
-# Add the service inside 'services'
+# Add the 'redis' service
+services:
+  # ... other services
   redis:
     build: ./requirements/bonus/redis
     image: redis
@@ -1079,12 +1150,18 @@ secrets:
       - redis_password
       - wp_admin_password
       - wp_user_password
+
+# 2. Add this in the main 'secrets' section at the bottom
+secrets:
+  # ... your other secrets
+  redis_password:
+    file: ../secrets/redis_password.txt
 ```
 
-The WordPress `entrypoint.sh` file also needs editing, add the following right after the secondary account creation:
+The WordPress `entrypoint.sh` file also needs editing, add the following between the secondary account creation and the ownership and permissions configuration:
 
 ```bash
-    # Redis Setup
+# Redis Setup (Bonus)
     echo "Configuring Redis Cache with authentication..."
     
     # Fetch the redis password from secret to use it in wp-config
@@ -1092,12 +1169,12 @@ The WordPress `entrypoint.sh` file also needs editing, add the following right a
 
     wp plugin install redis-cache --activate --allow-root
 
-    # Configure Redis connection details
+    # Injects Redis connection constants into wp-config.php
     wp config set WP_REDIS_HOST redis --allow-root
     wp config set WP_REDIS_PORT 6379 --raw --allow-root
-    # Crucial: Give WordPress the password to talk to Redis
     wp config set WP_REDIS_PASSWORD "$REDIS_PWD" --allow-root
 
+    # Enables the object cache to start using Redis
     wp redis enable --allow-root
 ```
 
@@ -1120,7 +1197,7 @@ echo -n "your_ftp_password" > ~/inception/secrets/ftp_password.txt
 
 Add your username at the end of the `.env` file:
 ```env
-# FTP SETUP
+# FTP SETUP (BONUS)
 FTP_USER=yourlogin
 ```
 
@@ -1141,18 +1218,21 @@ FROM debian:12
 
 # Install vsftpd (Very Secure FTP Daemon)
 RUN apt-get update && apt-get install -y \
-vsftpd \
-&& rm -rf /var/lib/apt/lists/*
+	vsftpd \
+	&& rm -rf /var/lib/apt/lists/*
 
-# Copy the entrypoint script
+# Copy and prepare the entrypoint script
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Expose FTP port and passive mode range
 EXPOSE 21 40000-40005
 
-# Run entrypoint
+# Prepares the environment (users, permissions, secrets) before launching
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Default binary executed as PID 1 via the entrypoint's 'exec "$@"'
+CMD ["vsftpd", "/etc/vsftpd.conf"]
 ```
 
 **vsftpd** requires a system user to operate. We create it dynamically at runtime with an `entrypoint.sh` file:
@@ -1168,23 +1248,35 @@ Copy and paste the following configuration:
 # Stop the script immediately if any command fails
 set -e
 
-# 1. Fetch the secret from the Docker secret mount point
-FTP_PWD=$(cat /run/secrets/ftp_password)
+# 1. Fetch secrets from Docker secret mount points
+FTP_PASSWORD=$(cat /run/secrets/ftp_password)
 
-# 2. Create the FTP user if it doesn't exist
-# We use the environment variable FTP_USER from the .env file
+# 2. Fail-fast validation
+if [ -z "$FTP_USER" ] || [ -z "$FTP_PASSWORD" ]; then
+    echo "Error: FTP_USER or ftp_password secret is missing." >&2
+    exit 1
+fi
+
+# 3. User Creation and Permissions
+# Create the FTP user if it doesn't exist and set their password
 if ! id "$FTP_USER" >/dev/null 2>&1; then
-    echo "Creating FTP user: $FTP_USER..."
-    useradd -m -s /bin/bash "$FTP_USER"
-    echo "$FTP_USER:$FTP_PWD" | chpasswd
-    
-    # Set the home directory to the WordPress volume path
+    useradd -m -d /var/www/html -s /bin/bash "$FTP_USER"
+    echo "$FTP_USER:$FTP_PASSWORD" | chpasswd
+else
     usermod -d /var/www/html "$FTP_USER"
 fi
 
-# 3. Configuration for vsftpd
-# We generate the config file dynamically to ensure correct settings
-cat << EOF > /etc/vsftpd.conf
+# Ensure the webroot is owned by the FTP user for upload capabilities
+echo "Setting permissions for /var/www/html..."
+chown -R "$FTP_USER:$FTP_USER" /var/www/html
+chmod -R 755 /var/www/html
+
+# 4. Prepare the runtime environment
+# vsftpd requires this specific directory to run for isolation (chroot)
+mkdir -p /var/run/vsftpd/empty
+
+# Generate the vsftpd configuration used by the container
+cat <<EOF > /etc/vsftpd.conf
 # Run in the foreground (required for Docker containers)
 listen=YES
 listen_ipv6=NO
@@ -1206,34 +1298,19 @@ pasv_max_port=40005
 pasv_address=0.0.0.0
 EOF
 
-# 4. Fix permissions
-# WordPress files often belong to www-data. We ensure our FTP user 
-# can actually modify/delete them by taking ownership.
-echo "Setting permissions for /var/www/html..."
-chown -R "$FTP_USER:$FTP_USER" /var/www/html
-chmod -R 755 /var/www/html
-
-# 5. Prepare the runtime environment
-mkdir -p /var/run/vsftpd/empty
-
 echo "Starting FTP server for user: $FTP_USER"
 
-# 6. Run vsftpd with the generated configuration
-exec vsftpd /etc/vsftpd.conf
+# 5. Execute the command from CMD
+# 'exec' replaces the shell with the vsftpd process so it becomes PID 1.
+# This ensures it receives SIGTERM signals directly for a clean shutdown.
+exec "$@"
 ```
 
 Passive mode is essential here, as Docker uses NAT networking. Without it, the FTP client would not be able to list or transfer files correctly.
 
-
 It is now time to update the `docker-compose.yml` file:
 ```yaml
-# 1. Add this to the main 'secrets' section at the bottom
-secrets:
-  # ... other secrets
-  ftp_password:
-    file: ../secrets/ftp_password.txt
-
-# 2. Add the FTP service
+# 1. Add the 'ftp' service
 services:
   # ... other services
   ftp:
@@ -1251,7 +1328,13 @@ services:
       - inception
     ports:
       - "21:21"
-      - "40000-40005:40000-40005"
+      - "40000-40005:40000-40005" # Passive mode port range
+
+# 2. Add this to the main 'secrets' section at the bottom
+secrets:
+  # ... other secrets
+  ftp_password:
+    file: ../secrets/ftp_password.txt
 ```
 
 It's time to rebuild your infrastructure using `make re` to apply the changes, and test the FTP service.
@@ -1326,10 +1409,10 @@ Copy and paste the following code in it:
 # Use Debian Bookworm as the base image
 FROM debian:12
 
-# Install lighttpd and clean up apt cache
+# Install lighttpd and clean up apt cache to keep the image slim
 RUN apt-get update && apt-get install -y \
-lighttpd \
-&& rm -rf /var/lib/apt/lists/*
+	lighttpd \
+	&& rm -rf /var/lib/apt/lists/*
 
 # Copy the configuration file
 COPY ./conf/lighttpd.conf /etc/lighttpd/lighttpd.conf
@@ -1337,13 +1420,15 @@ COPY ./conf/lighttpd.conf /etc/lighttpd/lighttpd.conf
 # Copy our static files to the document root
 COPY www /var/www/html
 
-# Ensure the web server user owns the files
+# Ensure the web server user (www-data) owns the files for proper access
 RUN chown -R www-data:www-data /var/www/html
 
-# Expose port 80 (internally, mapped via docker-compose)
+# Expose port 80 (internal container port)
 EXPOSE 80
 
-# Run lighttpd in the foreground
+# Run lighttpd as PID 1
+# -D: don't go to background (foreground mode, essential for Docker)
+# -f: path to the configuration file
 CMD ["lighttpd", "-D", "-f", "/etc/lighttpd/lighttpd.conf"]
 ```
 
@@ -1388,23 +1473,23 @@ server.modules = (
     "mod_accesslog"
 )
 
-# Web server user and group (standard Debian)
+# Standard Debian web server user/group
 server.username         = "www-data"
 server.groupname        = "www-data"
 
-# Document root matching the COPY command
+# Document root matching the path in the Dockerfile (COPY command)
 server.document-root    = "/var/www/html"
 
-# Internal port matching the EXPOSE command
+# Internal port matching the EXPOSE 80 instruction
 server.port             = 80
 
-# Default file
+# Default file to serve
 index-file.names        = ( "index.html" )
 
 # Basic MIME types (add more if you use images or JS later)
 mimetype.assign         = ( ".html" => "text/html" )
 
-# Deny access to all hidden files (like .htaccess, .env)
+# Security: deny access to all hidden files (like .htaccess, .env)
 $HTTP["url"] =~ "/\." {
     url.access-deny = ("")
 }
@@ -1412,6 +1497,9 @@ $HTTP["url"] =~ "/\." {
 
 We need to update the docker-compose.yml file and map the host port 8081 to the container port 80:
 ```yaml
+# Add the 'static' service
+services:
+  # ... other services
   static:
     build: ./requirements/bonus/static
     image: static
@@ -1459,19 +1547,17 @@ FROM debian:12
 
 # Install wget (to download Adminer), PHP, and the PHP-MySQL extension
 RUN apt-get update && apt-get install -y \
-wget \
-php \
-php-mysql \
-&& rm -rf /var/lib/apt/lists/*
+	wget php php-mysql && \
+	rm -rf /var/lib/apt/lists/*
 
 # Create the web directory
 RUN mkdir -p /var/www/html
 
-# Download the latest version of Adminer directly into the web directory
+# Download Adminer directly into the web directory
 # We rename it to index.php so the server loads it by default
-RUN wget https://www.adminer.org/latest.php -O /var/www/html/index.php
+RUN wget https://github.com/vrana/adminer/releases/download/v5.4.2/adminer-5.4.2.php -O /var/www/html/index.php
 
-# Ensure proper permissions (optional but good practice)
+# Ensure proper permissions
 RUN chown -R www-data:www-data /var/www/html
 
 # Set the working directory
@@ -1480,12 +1566,15 @@ WORKDIR /var/www/html
 # Expose port 8080
 EXPOSE 8080
 
-# Start PHP's built-in web server listening on all interfaces
+# Start PHP's built-in web server listening on all interfaces (PID 1)
 CMD ["php", "-S", "0.0.0.0:8080", "-t", "/var/www/html"]
 ```
 
 We must update the `docker-compose.yml` file and add the Adminer service. We map it to port 8080. It needs to be on the inception network to communicate with the MariaDB container. Type:
 ```yaml
+# Add the 'adminer' service
+services:
+  # ... other services
   adminer:
     build: ./requirements/bonus/adminer
     image: adminer
@@ -1550,7 +1639,7 @@ Copy and paste the following code in it:
 
 ```dockerfile
 # Stage 1: Temporary stage to get the binary
-FROM ghcr.io/getarcaneapp/arcane:latest AS builder
+FROM ghcr.io/getarcaneapp/arcane:v1.18.1 AS builder
 
 # Stage 2: Final image based on Debian 12
 FROM debian:12
@@ -1558,6 +1647,7 @@ FROM debian:12
 # Install requirements
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 
+# Setup application directory
 WORKDIR /app
 RUN mkdir -p /app/data
 
@@ -1569,9 +1659,14 @@ RUN chmod +x /usr/local/bin/arcane
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# Expose port 3552
 EXPOSE 3552
 
+# Prepares the environment (secrets) before launching the application
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Default binary executed as PID 1 via the entrypoint's 'exec "$@"'
+CMD ["arcane"]
 ```
 
 Arcane also needs an `entrypoint.sh` script:
@@ -1585,16 +1680,24 @@ Copy and paste the following code in it:
 ```bash
 #!/bin/sh
 
-# Load secrets into environment variables
+# Stops the script immediately if any command fails
+set -e
+
+# 1. Loads secrets into environment variables
 export ENCRYPTION_KEY=$(cat /run/secrets/arc_encryption_key)
 export JWT_SECRET=$(cat /run/secrets/arc_jwt_secret)
 
-# Execute the binary
-exec arcane
+# 2. Execute the command from CMD
+# 'exec' replaces the shell with the Arcane process so it becomes PID 1.
+# This ensures it receives SIGTERM signals directly for a clean shutdown.
+exec "$@"
 ```
 
 Add the service and the secrets declaration to your `docker-compose.yml`:
 ```yaml
+# Add the 'adminer' service
+services:
+  # ... other services
   arcane:
     build: ./requirements/bonus/arcane
     image: arcane

@@ -5,7 +5,7 @@ set -e
 
 # 1. Fetch secrets from Docker secret mount points
 # Retrieves sensitive credentials from Docker secret files
-MYSQL_PASSWORD=$(cat /run/secrets/db_password)
+MARIADB_PASSWORD=$(cat /run/secrets/db_password)
 WP_ADMIN_PASSWORD=$(cat /run/secrets/wp_admin_password)
 WP_USER_PASSWORD=$(cat /run/secrets/wp_user_password)
 
@@ -13,7 +13,7 @@ WP_USER_PASSWORD=$(cat /run/secrets/wp_user_password)
 # Ensures all necessary credentials are present before attempting installation
 
 # Database checks
-if [ -z "$MYSQL_HOSTNAME" ] || [ -z "$MYSQL_DATABASE" ] || [ -z "$MYSQL_USER" ] || [ -z "$MYSQL_PASSWORD" ]; then
+if [ -z "$MARIADB_HOSTNAME" ] || [ -z "$MARIADB_DATABASE" ] || [ -z "$MARIADB_USER" ] || [ -z "$MARIADB_PASSWORD" ]; then
     echo "Error: Missing database environment variables or secrets." >&2
     exit 1
 fi
@@ -33,7 +33,7 @@ fi
 # 3. Service Initialization & Dependencies
 # Service availability check: ensures the database is up before running WP-CLI commands
 echo "Waiting for MariaDB to be ready..."
-until mysql -h"$MYSQL_HOSTNAME" -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
+until mariadb -h"$MARIADB_HOSTNAME" -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
     sleep 2
 done
 
@@ -47,10 +47,10 @@ if [ ! -f "/var/www/html/wp-config.php" ]; then
 
     # Generates wp-config.php with provided database credentials
     wp config create \
-        --dbname="$MYSQL_DATABASE" \
-        --dbuser="$MYSQL_USER" \
-        --dbpass="$MYSQL_PASSWORD" \
-        --dbhost="$MYSQL_HOSTNAME" \
+        --dbname="$MARIADB_DATABASE" \
+        --dbuser="$MARIADB_USER" \
+        --dbpass="$MARIADB_PASSWORD" \
+        --dbhost="$MARIADB_HOSTNAME" \
         --allow-root
 
     # Configures the database and creates the primary administrator account

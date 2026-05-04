@@ -21,6 +21,7 @@ To manage the state of the infrastructure, use the provided Makefile commands fr
 ## Accessing the Services
 Ensure that your host machine's `/etc/hosts` file maps the domain `gdosch.42.fr` to your Virtual Machine's IP address.
 * **Main Website (WordPress):** `https://gdosch.42.fr` (Accept the self-signed SSL certificate warning).
+* **WordPress Admin Panel:** `https://gdosch.42.fr/wp-admin` (Log in with your WP_ADMIN credentials).
 * **FTP Access:** Connect using an FTP client (like FileZilla) to `gdosch.42.fr` on port `21`.
 * **Static Website:** `http://gdosch.42.fr:8081`
 * **Adminer (Database Admin):** `http://gdosch.42.fr:8080`
@@ -37,3 +38,4 @@ To verify that all services are running correctly:
 1. Open a terminal on the host machine.
 2. Run `docker ps` to see the status of all containers. Ensure none are marked as "restarting" or "exited".
 3. To view the logs of a specific service, run `docker logs <service_name>`.
+4. Graphical Monitoring (Arcane): Access the dashboard at `http://gdosch.42.fr:3552` and log in using the credentials provided by the administrator.

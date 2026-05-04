@@ -1,9 +1,10 @@
 # Use Debian Bookworm as the base image for consistency
 FROM debian:12
 
-# Install wget (to download Adminer), PHP, and the PHP-MySQL extension
+# Install PHP, the PHP-MySQL extension and wget (to download Adminer)
 RUN apt-get update && apt-get install -y \
-	wget php php-mysql && \
+	php8.2 php8.2-mysql \
+	wget && \
 	rm -rf /var/lib/apt/lists/*
 
 # Create the web directory

@@ -75,6 +75,28 @@ While the `Makefile` automates the general workflow, you may need to use native 
 * `docker stats`: Displays real-time CPU and memory usage for all containers.
 * `docker inspect <object>`: Inspect container, network, or volume details. This command outputs a JSON document containing low-level metadata such as internal IP addresses, mounted volume paths, network configuration, environment variables, and runtime state.
 
+## Relevant Docker Compose Commands
+Since this project is orchestrated using a `docker-compose.yml` file, these commands are the most relevant for managing the entire stack at once:
+
+* `docker compose ps`: Lists the status of all services defined in the configuration, showing if they are "Up" or "Healthy".
+* `docker compose logs [-f] [service]`: Aggregates logs from all services. Specify a service name to filter the output, and use `-f` to stream them.
+* `docker compose up -d`: Starts the entire infrastructure in the background. It builds images, creates networks, and mounts volumes automatically.
+* `docker compose down [-v] [--rmi all]`: Stops and removes all containers and networks. Add the `-v` flag to also delete the persistent volumes (use with caution!). The `--rmi all` option removes all images used by the services, including those built locally.
+* `docker compose top`: Displays the running processes of each service in the stack, similar to the `top` command on Linux.
+* `docker compose config`: Validates and displays the final rendered version of your configuration. This is perfect for verifying that your `.env` variables and secrets are correctly interpreted.
+
+## Database Management (MariaDB)
+To manage and verify your persistent data, you must interact with the MariaDB container. These commands allow you to access the database and perform basic checks to ensure it is not empty:
+
+* `docker exec -it mariadb mariadb -u root -p`: Access the database with full administrative privileges. You will be prompted for the `MARIADB_ROOT_PASSWORD` defined in your `.env`.
+* `docker exec -it mariadb mariadb -u [user] -p`: Access the database as a standard user (e.g., the WordPress user). You will be prompted for the `MARIADB_PASSWORD`.
+* `SHOW DATABASES;`: Once inside the MariaDB prompt, this command lists all available databases. Look for your WordPress database here.
+* `USE [database_name];`: Selects a specific database to work with. You must run this before querying tables.
+* `SHOW TABLES;`: Lists all tables within the selected database. If WordPress is correctly installed, you should see about 12 tables (e.g., `wp_users`, `wp_posts`).
+* `SELECT * FROM wp_users;`: Displays all columns and rows from the users table. This is the most effective way to prove the database is populated and to see your admin credentials.
+* `SELECT user_login, user_email FROM wp_users;`: A quick query to display registered users, proving that the database has been populated with actual data.
+* `exit`: Safely exits the MariaDB interactive shell and returns to your host terminal.
+
 ## Data Storage and Persistence
 To ensure data persists across container restarts and recreations, we use Docker volumes bound to specific host directories via driver options. All persistent data is stored on the host machine under `/home/gdosch/data/`.
 
@@ -404,10 +426,10 @@ To create the `.env` file in `srcs` with the following configuration, type:
 cat << 'EOF' > ~/inception/srcs/.env
 DOMAIN_NAME=yourlogin.42.fr
 
-# MYSQL SETUP
-MYSQL_USER=yourlogin
-MYSQL_DATABASE=wordpress
-MYSQL_HOSTNAME=mariadb
+# MARIADB SETUP
+MARIADB_USER=yourlogin
+MARIADB_DATABASE=wordpress
+MARIADB_HOSTNAME=mariadb
 
 # WORDPRESS SETUP
 WP_TITLE=Inception
@@ -471,16 +493,22 @@ services:
     container_name: mariadb
     restart: unless-stopped
     healthcheck:
-      # We use the root secret directly since MYSQL_PASSWORD environment variable isn't set
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$(cat /run/secrets/db_root_password) --silent"]
+      # Verifies DB readiness:
+      # - mariadb-admin ping: sends a connection check to the server
+      # - -h 127.0.0.1: forces connection through the local network interface
+      # - -uroot: connects with root privileges for the health probe
+      # - -p$$(cat ...): securely reads the root password from the Docker secret file
+      # - --silent: prevents status messages from cluttering container logs
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -uroot -p$$(cat /run/secrets/db_root_password) --silent"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
     environment:
-      - MYSQL_DATABASE=${MYSQL_DATABASE}
-      - MYSQL_USER=${MYSQL_USER}
-      - MYSQL_HOSTNAME=${MYSQL_HOSTNAME}
+      # Explicit mapping: only injects required variables instead of using 'env_file: .env'
+      - MARIADB_DATABASE=${MARIADB_DATABASE}
+      - MARIADB_USER=${MARIADB_USER}
+      - MARIADB_HOSTNAME=${MARIADB_HOSTNAME}
     secrets:
       - db_password
       - db_root_password
@@ -499,14 +527,30 @@ services:
     depends_on:
       mariadb:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
-      # pgrep is more flexible regarding the exact php-fpm binary name
+      # Verifies that the PHP-FPM process is active and running:
+      # - pgrep php-fpm: searches for any process matching the PHP-FPM name.
+      # - > /dev/null: redirects output to keep the healthcheck logs clean.
+      # - || exit 1: ensures the container is marked as 'unhealthy' if no process is found.
+      # This is more flexible than checking for a specific versioned binary name.
       test: ["CMD-SHELL", "pgrep php-fpm > /dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s # Gives wp-cli enough time to download and install everything during the first boot
-    env_file: .env
+    environment:
+      # Explicit mapping: only injects required variables instead of using 'env_file: .env'
+      - MARIADB_HOSTNAME=${MARIADB_HOSTNAME}
+      - MARIADB_DATABASE=${MARIADB_DATABASE}
+      - MARIADB_USER=${MARIADB_USER}
+      - WP_ADMIN_USER=${WP_ADMIN_USER}
+      - WP_ADMIN_EMAIL=${WP_ADMIN_EMAIL}
+      - DOMAIN_NAME=${DOMAIN_NAME}
+      - WP_TITLE=${WP_TITLE}
+      - WP_USER=${WP_USER}
+      - WP_USER_EMAIL=${WP_USER_EMAIL}
     secrets:
       - db_password
       - redis_password
@@ -528,13 +572,18 @@ services:
       wordpress:
         condition: service_healthy
     healthcheck:
-      # Verifies the web server is actually serving the page over HTTPS
+      # Verifies the web server is operational and serving content via HTTPS:
+      # - wget: uses the built-in web downloader to probe the server.
+      # - --no-check-certificate: ignores SSL validation since we use self-signed certs.
+      # - --spider: runs in web-crawler mode (checks page existence without downloading).
+      # - https://localhost: specifically tests the encrypted connection on the local interface.
+      # - || exit 1: triggers an 'unhealthy' status if the request fails or times out.
       test: ["CMD-SHELL", "wget --no-check-certificate --spider https://localhost || exit 1"]
       interval: 15s
       timeout: 5s
-      retries: 3
-      start_period: 10s # Safety buffer for SSL generation and config loading
+      retries: 5
     environment:
+      # Explicit mapping: only injects required variables instead of using 'env_file: .env'
       - DOMAIN_NAME=${DOMAIN_NAME}
     volumes:
       - wordpress_data:/var/www/html:ro
@@ -559,7 +608,7 @@ networks:
   inception:
     driver: bridge # Standard bridge network for inter-container communication (default mode)
 
-# Named volumes configured as bind-mounts to specific host paths
+# Mapped named volumes (configured as bind-mounts) to specific host paths
 volumes:
   mariadb_data:
     driver_opts:
@@ -606,7 +655,7 @@ down:
 
 # Access the database command line
 mariadb:
-	docker exec -it mariadb mysql -u root -p
+	docker exec -it mariadb mariadb -u root -p
 
 # Standard cleanup: removes stopped containers and dangling resources (cache, networks)
 clean: down
@@ -682,7 +731,7 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # Default command executed by the entrypoint script (PID 1)
 # We must specify --user=mysql to avoid the "run as root" error
 # --bind-address=0.0.0.0 allows connections from other containers
-CMD ["mysqld", "--user=mysql", "--bind-address=0.0.0.0"]
+CMD ["mariadbd", "--user=mysql", "--bind-address=0.0.0.0", "--port=3306"]
 ```
 
 Then, create the `entrypoint.sh` script:
@@ -701,19 +750,19 @@ set -e
 
 # 1. Fetch secrets from Docker secret mount points (RAM-only files)
 # This avoids passing sensitive passwords through environment variables
-MYSQL_ROOT_PASSWORD=$(cat /run/secrets/db_root_password)
-MYSQL_PASSWORD=$(cat /run/secrets/db_password)
+MARIADB_ROOT_PASSWORD=$(cat /run/secrets/db_root_password)
+MARIADB_PASSWORD=$(cat /run/secrets/db_password)
 
 # 2. Fail-fast validation
 # Ensures all necessary credentials are present before attempting installation
-if [ -z "$MYSQL_ROOT_PASSWORD" ] || [ -z "$MYSQL_DATABASE" ] || [ -z "$MYSQL_USER" ] || [ -z "$MYSQL_PASSWORD" ]; then
+if [ -z "$MARIADB_ROOT_PASSWORD" ] || [ -z "$MARIADB_DATABASE" ] || [ -z "$MARIADB_USER" ] || [ -z "$MARIADB_PASSWORD" ]; then
     echo "Error: Missing mandatory database environment variables or secrets." >&2
     exit 1
 fi
 
 # 3. MariaDB Installation Logic
-# Only run initialization if the command passed is 'mysqld'
-if [ "$1" = 'mysqld' ]; then
+# Only run initialization if the command passed is 'mariadbd'
+if [ "$1" = 'mariadbd' ]; then
     # Custom marker file check to ensure persistence (skips if already initialized)
     if [ ! -f "/var/lib/mysql/.initialized" ]; then
         echo "Initializing MariaDB database..."
@@ -722,16 +771,16 @@ if [ "$1" = 'mysqld' ]; then
         chown -R mysql:mysql /var/lib/mysql
 
         # Create system tables and initial database structure
-        mysql_install_db --user=mysql --datadir=/var/lib/mysql > /dev/null
+        mariadb-install-db --user=mysql --datadir=/var/lib/mysql > /dev/null
 
         # Use bootstrap to configure users and database privileges
         # This executes SQL commands without starting the full network server
-        mysqld --user=mysql --datadir=/var/lib/mysql --bootstrap <<EOF
+        mariadbd --user=mysql --datadir=/var/lib/mysql --bootstrap <<EOF
 FLUSH PRIVILEGES;
-ALTER USER 'root'@'localhost' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}';
-CREATE DATABASE IF NOT EXISTS ${MYSQL_DATABASE};
-CREATE USER IF NOT EXISTS '${MYSQL_USER}'@'%' IDENTIFIED BY '${MYSQL_PASSWORD}';
-GRANT ALL PRIVILEGES ON ${MYSQL_DATABASE}.* TO '${MYSQL_USER}'@'%';
+ALTER USER 'root'@'localhost' IDENTIFIED BY '${MARIADB_ROOT_PASSWORD}';
+CREATE DATABASE IF NOT EXISTS ${MARIADB_DATABASE};
+CREATE USER IF NOT EXISTS '${MARIADB_USER}'@'%' IDENTIFIED BY '${MARIADB_PASSWORD}';
+GRANT ALL PRIVILEGES ON ${MARIADB_DATABASE}.* TO '${MARIADB_USER}'@'%';
 FLUSH PRIVILEGES;
 EOF
         # Create the marker file to confirm successful first-time setup
@@ -815,7 +864,7 @@ set -e
 
 # 1. Fetch secrets from Docker secret mount points
 # Retrieves sensitive credentials from Docker secret files
-MYSQL_PASSWORD=$(cat /run/secrets/db_password)
+MARIADB_PASSWORD=$(cat /run/secrets/db_password)
 WP_ADMIN_PASSWORD=$(cat /run/secrets/wp_admin_password)
 WP_USER_PASSWORD=$(cat /run/secrets/wp_user_password)
 
@@ -823,7 +872,7 @@ WP_USER_PASSWORD=$(cat /run/secrets/wp_user_password)
 # Ensures all necessary credentials are present before attempting installation
 
 # Database checks
-if [ -z "$MYSQL_HOSTNAME" ] || [ -z "$MYSQL_DATABASE" ] || [ -z "$MYSQL_USER" ] || [ -z "$MYSQL_PASSWORD" ]; then
+if [ -z "$MARIADB_HOSTNAME" ] || [ -z "$MARIADB_DATABASE" ] || [ -z "$MARIADB_USER" ] || [ -z "$MARIADB_PASSWORD" ]; then
     echo "Error: Missing database environment variables or secrets." >&2
     exit 1
 fi
@@ -843,7 +892,7 @@ fi
 # 3. Service Initialization & Dependencies
 # Service availability check: ensures the database is up before running WP-CLI commands
 echo "Waiting for MariaDB to be ready..."
-until mysql -h"$MYSQL_HOSTNAME" -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
+until mariadb -h"$MARIADB_HOSTNAME" -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
     sleep 2
 done
 
@@ -857,10 +906,10 @@ if [ ! -f "/var/www/html/wp-config.php" ]; then
 
     # Generates wp-config.php with provided database credentials
     wp config create \
-        --dbname="$MYSQL_DATABASE" \
-        --dbuser="$MYSQL_USER" \
-        --dbpass="$MYSQL_PASSWORD" \
-        --dbhost="$MYSQL_HOSTNAME" \
+        --dbname="$MARIADB_DATABASE" \
+        --dbuser="$MARIADB_USER" \
+        --dbpass="$MARIADB_PASSWORD" \
+        --dbhost="$MARIADB_HOSTNAME" \
         --allow-root
 
     # Configures the database and creates the primary administrator account
@@ -879,7 +928,21 @@ if [ ! -f "/var/www/html/wp-config.php" ]; then
         --user_pass="$WP_USER_PASSWORD" \
         --allow-root
 
-    # Note: If implementing the Redis bonus, inject the configuration logic here.
+    # Redis Setup (Bonus)
+    echo "Configuring Redis Cache with authentication..."
+    
+    # Fetch the redis password from secret to use it in wp-config
+    REDIS_PWD=$(cat /run/secrets/redis_password)
+
+    wp plugin install redis-cache --activate --allow-root
+
+    # Injects Redis connection constants into wp-config.php
+    wp config set WP_REDIS_HOST redis --allow-root
+    wp config set WP_REDIS_PORT 6379 --raw --allow-root
+    wp config set WP_REDIS_PASSWORD "$REDIS_PWD" --allow-root
+
+    # Enables the object cache to start using Redis
+    wp redis enable --allow-root
 
     # Finalizes file permissions for the web server (www-data)
     chown -R www-data:www-data /var/www/html
@@ -891,7 +954,6 @@ fi
 # 'exec' replaces the shell with the PHP-FPM process so it becomes PID 1.
 # This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec "$@"
-
 ```
 
 **NGINX Setup**
@@ -1190,9 +1252,15 @@ services:
     container_name: redis
     restart: unless-stopped
     healthcheck:
+      # Verifies Redis availability by performing a handshake:
+      # - redis-cli ping: sends the standard PING command to the server.
+      # - -h 127.0.0.1: targets the local instance within the container.
+      # - -a "$$(cat ...)": securely authenticates using the password from the Docker secret.
+      # - grep PONG: confirms the server specifically responded with the expected 'PONG'.
+      # - || exit 1: ensures the container is marked 'unhealthy' if the handshake fails.
       test: ["CMD-SHELL", "redis-cli -h 127.0.0.1 -a \"$$(cat /run/secrets/redis_password)\" ping | grep PONG || exit 1"]
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 5
       start_period: 5s
     secrets:
@@ -1360,7 +1428,24 @@ Passive mode is essential here, as Docker uses NAT networking. Without it, the F
 
 It is now time to update the `docker-compose.yml` file:
 ```yaml
-# 1. Add the 'ftp' service
+# 1. Update the 'wordpress' service to prevent access
+# to the unrelated 'FTP_USER' environment variable.
+  wordpress:
+    # ... keep existing config
+    # Replace 'env_file: .env' with explicit mapping:
+    environment:
+      # Explicit mapping: only injects required variables instead of using 'env_file: .env'
+      - MARIADB_HOSTNAME=${MARIADB_HOSTNAME}
+      - MARIADB_DATABASE=${MARIADB_DATABASE}
+      - MARIADB_USER=${MARIADB_USER}
+      - WP_ADMIN_USER=${WP_ADMIN_USER}
+      - WP_ADMIN_EMAIL=${WP_ADMIN_EMAIL}
+      - DOMAIN_NAME=${DOMAIN_NAME}
+      - WP_TITLE=${WP_TITLE}
+      - WP_USER=${WP_USER}
+      - WP_USER_EMAIL=${WP_USER_EMAIL}
+
+# 2. Add the 'ftp' service
 services:
   # ... other services
   ftp:
@@ -1370,6 +1455,7 @@ services:
     container_name: ftp
     restart: unless-stopped
     environment:
+      # Explicit mapping: only injects required variables instead of using 'env_file: .env'
       - FTP_USER=${FTP_USER}
     secrets:
       - ftp_password
@@ -1382,7 +1468,7 @@ services:
       - "40000-40005:40000-40005" # Passive mode port range
     logging: *default-logging
 
-# 2. Add this to the main 'secrets' section at the bottom
+# 3. Add this to the main 'secrets' section at the bottom
 secrets:
   # ... other secrets
   ftp_password:
@@ -1599,9 +1685,10 @@ Copy and paste the following code in it:
 # Use Debian Bookworm as the base image for consistency
 FROM debian:12
 
-# Install wget (to download Adminer), PHP, and the PHP-MySQL extension
+# Install PHP, the PHP-MySQL extension and wget (to download Adminer)
 RUN apt-get update && apt-get install -y \
-	wget php php-mysql && \
+	php8.2 php8.2-mysql \
+	wget && \
 	rm -rf /var/lib/apt/lists/*
 
 # Create the web directory

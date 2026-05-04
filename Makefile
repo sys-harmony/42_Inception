@@ -20,7 +20,7 @@ down:
 
 # Access the database command line
 mariadb:
-	docker exec -it mariadb mysql -u root -p
+	docker exec -it mariadb mariadb -u root -p
 
 # Standard cleanup: removes stopped containers and dangling resources (cache, networks)
 clean: down
@@ -34,14 +34,21 @@ fclean:
 #   Deep clean: removes all unused images and entire build cache (including non-dangling)
 	@docker system prune -af
 
-#   Security check: ensures DATA_PATH is set and is not the root directory to prevent system damage
-	@if [ -z "$(DATA_PATH)" ] || [ "$(DATA_PATH)" = "/" ]; then \
-		echo "Error: DATA_PATH is empty or set to root. Aborting wipe."; \
-		exit 1; \
-	fi
-
+#	Interactive prompt for persistent data
+#   Ensures DATA_PATH is set and is not the root directory to prevent system damage
 #   Requires sudo password to securely delete persistent data from the host
-	@sudo rm -rf $(DATA_PATH)
+	@echo "All Docker containers, networks, volumes, images and cache were deleted."
+	@read -p "Would you like to wipe the persistent data too? [y/N] " ans && if [ "$$ans" = "y" ] || [ "$$ans" = "Y" ]; then \
+		if [ -z "$(DATA_PATH)" ] || [ "$(DATA_PATH)" = "/" ]; then \
+			echo "Error: DATA_PATH is empty or set to root. Aborting wipe."; \
+			exit 1; \
+		fi; \
+		sudo -k; \
+		sudo rm -rf $(DATA_PATH); \
+		echo "Persistent data wiped successfully."; \
+	else \
+		echo "Persistent data preserved."; \
+	fi
 
 # Complete rebuild from scratch
 re: fclean all

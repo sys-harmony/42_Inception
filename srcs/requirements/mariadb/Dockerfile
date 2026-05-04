@@ -27,4 +27,4 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # Default command executed by the entrypoint script (PID 1)
 # We must specify --user=mysql to avoid the "run as root" error
 # --bind-address=0.0.0.0 allows connections from other containers
-CMD ["mysqld", "--user=mysql", "--bind-address=0.0.0.0"]
+CMD ["mariadbd", "--user=mysql", "--bind-address=0.0.0.0", "--port=3306"]

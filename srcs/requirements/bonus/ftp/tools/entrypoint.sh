@@ -35,6 +35,7 @@ cat <<EOF > /etc/vsftpd.conf
 # Run in the foreground (required for Docker containers)
 listen=YES
 listen_ipv6=NO
+listen_port=21
 
 # Access rights for local users
 local_enable=YES

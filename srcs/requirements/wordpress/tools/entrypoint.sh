@@ -33,7 +33,7 @@ fi
 # 3. Service Initialization & Dependencies
 # Service availability check: ensures the database is up before running WP-CLI commands
 echo "Waiting for MariaDB to be ready..."
-until mariadb -h"$MARIADB_HOST" -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
+until mariadb -h"$MARIADB_HOST" -P 3306 -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
     sleep 2
 done
 
@@ -50,7 +50,7 @@ if [ ! -f "/var/www/html/wp-config.php" ]; then
         --dbname="$MARIADB_DATABASE" \
         --dbuser="$MARIADB_USER" \
         --dbpass="$MARIADB_PASSWORD" \
-        --dbhost="$MARIADB_HOST" \
+        --dbhost="$MARIADB_HOST:3306" \
         --allow-root
 
     # Configures the database and creates the primary administrator account

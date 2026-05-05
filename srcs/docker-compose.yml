@@ -18,10 +18,11 @@ services:
       # Verifies DB readiness:
       # - mariadb-admin ping: sends a connection check to the server
       # - -h 127.0.0.1: forces connection through the local network interface
+      # - -P 3306: explicitly enforces the connection on the default MariaDB port
       # - -uroot: connects with root privileges for the health probe
       # - -p$$(cat ...): securely reads the root password from the Docker secret file
       # - --silent: prevents status messages from cluttering container logs
-      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -uroot -p$$(cat /run/secrets/db_root_password) --silent"]
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -P 3306 -uroot -p$$(cat /run/secrets/db_root_password) --silent"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -94,10 +95,11 @@ services:
       # Verifies Redis availability by performing a handshake:
       # - redis-cli ping: sends the standard PING command to the server.
       # - -h 127.0.0.1: targets the local instance within the container.
+      # - -p 6379: explicitly enforces the connection on the default Redis port.
       # - -a "$$(cat ...)": securely authenticates using the password from the Docker secret.
       # - grep PONG: confirms the server specifically responded with the expected 'PONG'.
       # - || exit 1: ensures the container is marked 'unhealthy' if the handshake fails.
-      test: ["CMD-SHELL", "redis-cli -h 127.0.0.1 -a \"$$(cat /run/secrets/redis_password)\" ping | grep PONG || exit 1"]
+      test: ["CMD-SHELL", "redis-cli -h 127.0.0.1 -p 6379 -a \"$$(cat /run/secrets/redis_password)\" ping | grep PONG || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -122,9 +124,9 @@ services:
       # - wget: uses the built-in web downloader to probe the server.
       # - --no-check-certificate: ignores SSL validation since we use self-signed certs.
       # - --spider: runs in web-crawler mode (checks page existence without downloading).
-      # - https://localhost: specifically tests the encrypted connection on the local interface.
+      # - https://localhost:443: explicitly targets the encrypted connection on NGINX default HTTPS port.
       # - || exit 1: triggers an 'unhealthy' status if the request fails or times out.
-      test: ["CMD-SHELL", "wget --no-check-certificate --spider https://localhost || exit 1"]
+      test: ["CMD-SHELL", "wget --no-check-certificate --spider https://localhost:443 || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5

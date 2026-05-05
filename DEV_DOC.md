@@ -114,7 +114,7 @@ Data is stored on the host machine to remain independent of the container's life
 This comprehensive guide details every step required to recreate the entire Inception infrastructure from scratch, from the initial virtual machine setup to the final container deployment.
 
 > **Note on Naming Conventions:**  
-> In this tutorial, we use `yourlogin` as a placeholder for your 42 username. Don't forget to replace every instance of it.
+> In this tutorial, I use `yourlogin` as a placeholder for your 42 username. Don't forget to replace every instance of it.
 
 ### 1. Download & Virtual Machine Setup
 
@@ -442,7 +442,12 @@ EOF
 
 Make sure to replace `yourlogin` with your actual 42 username.
 
-While `.env` files are often used to store sensitive data, security best practices recommend keeping critical settings (i.e. passwords) into dedicated secret files. Replace the values in quotes with passwords of your choice securely in `~/inception/secrets/`:
+While `.env` files are often used to store sensitive data, security best practices recommend keeping critical settings (i.e. passwords, keys and tokens) into dedicated secret files. Replace the values in quotes with passwords of your choice securely in `~/inception/secrets/`:
+
+> [!NOTE]
+> **Design Architecture: Internal Ports in .env**
+> You might wonder why internal ports (like 3306 for MariaDB or 9000 for PHP-FPM) are not defined in the `.env` file. 
+> In an isolated Docker Bridge network like ours, every container has its own IP and listens on its default port with zero risk of collision. Moving these internal ports to the `.env` would unnecessarily complexify the configuration (especially for Nginx which doesn't read env variables natively) and make the code harder to read. We explicitly document these ports in the `Dockerfile` and `docker-compose.yml` to maintain clear architectural boundaries.
 
 ```bash
 cd ~/inception/secrets
@@ -496,10 +501,11 @@ services:
       # Verifies DB readiness:
       # - mariadb-admin ping: sends a connection check to the server
       # - -h 127.0.0.1: forces connection through the local network interface
+      # - -P 3306: explicitly enforces the connection on the default MariaDB port
       # - -uroot: connects with root privileges for the health probe
       # - -p$$(cat ...): securely reads the root password from the Docker secret file
       # - --silent: prevents status messages from cluttering container logs
-      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -uroot -p$$(cat /run/secrets/db_root_password) --silent"]
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -P 3306 -uroot -p$$(cat /run/secrets/db_root_password) --silent"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -563,9 +569,9 @@ services:
       # - wget: uses the built-in web downloader to probe the server.
       # - --no-check-certificate: ignores SSL validation since we use self-signed certs.
       # - --spider: runs in web-crawler mode (checks page existence without downloading).
-      # - https://localhost: specifically tests the encrypted connection on the local interface.
+      # - https://localhost:443: explicitly targets the encrypted connection on NGINX default HTTPS port.
       # - || exit 1: triggers an 'unhealthy' status if the request fails or times out.
-      test: ["CMD-SHELL", "wget --no-check-certificate --spider https://localhost || exit 1"]
+      test: ["CMD-SHELL", "wget --no-check-certificate --spider https://localhost:443 || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -656,14 +662,21 @@ fclean:
 #   Deep clean: removes all unused images and entire build cache (including non-dangling)
 	@docker system prune -af
 
-#   Security check: ensures DATA_PATH is set and is not the root directory to prevent system damage
-	@if [ -z "$(DATA_PATH)" ] || [ "$(DATA_PATH)" = "/" ]; then \
-		echo "Error: DATA_PATH is empty or set to root. Aborting wipe."; \
-		exit 1; \
-	fi
-
+#	Interactive prompt for persistent data
+#   Ensures DATA_PATH is set and is not the root directory to prevent system damage
 #   Requires sudo password to securely delete persistent data from the host
-	@sudo rm -rf $(DATA_PATH)
+	@echo "All Docker containers, networks, volumes, images and cache were deleted."
+	@read -p "Would you like to wipe the persistent data too? [y/N] " ans && if [ "$$ans" = "y" ] || [ "$$ans" = "Y" ]; then \
+		if [ -z "$(DATA_PATH)" ] || [ "$(DATA_PATH)" = "/" ]; then \
+			echo "Error: DATA_PATH is empty or set to root. Aborting wipe."; \
+			exit 1; \
+		fi; \
+		sudo -k; \
+		sudo rm -rf $(DATA_PATH); \
+		echo "Persistent data wiped successfully."; \
+	else \
+		echo "Persistent data preserved."; \
+	fi
 
 # Complete rebuild from scratch
 re: fclean all
@@ -718,6 +731,7 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # Default command executed by the entrypoint script (PID 1)
 # We must specify --user=mysql to avoid the "run as root" error
 # --bind-address=0.0.0.0 allows connections from other containers
+# --port=3306 specifies the port to listen on, 3306 being the default one
 CMD ["mariadbd", "--user=mysql", "--bind-address=0.0.0.0", "--port=3306"]
 ```
 
@@ -879,7 +893,7 @@ fi
 # 3. Service Initialization & Dependencies
 # Service availability check: ensures the database is up before running WP-CLI commands
 echo "Waiting for MariaDB to be ready..."
-until mariadb -h"$MARIADB_HOST" -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
+until mariadb -h"$MARIADB_HOST" -P 3306 -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
     sleep 2
 done
 
@@ -896,7 +910,7 @@ if [ ! -f "/var/www/html/wp-config.php" ]; then
         --dbname="$MARIADB_DATABASE" \
         --dbuser="$MARIADB_USER" \
         --dbpass="$MARIADB_PASSWORD" \
-        --dbhost="$MARIADB_HOST" \
+        --dbhost="$MARIADB_HOST:3306" \
         --allow-root
 
     # Configures the database and creates the primary administrator account
@@ -946,9 +960,9 @@ FROM debian:12
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Update the system and install NGINX and OpenSSL
+# Install NGINX, OpenSSL (certificates), and wget (Docker healthcheck)
 RUN apt-get update && apt-get install -y \
-	nginx openssl && \
+	nginx openssl wget && \
 	rm -rf /var/lib/apt/lists/*
 
 # Copy the NGINX configuration file into the container
@@ -1123,9 +1137,7 @@ cd ~/inception
 make
 ```
 
-Your system is alive at `https://yourlogin.42.fr` (Accept the self-signed certificate warning in your browser).
-
-Your system is now alive! You can access it via your browser:
+Your system is now alive! You can access it via your browser (Accept the self-signed certificate warning in your browser):
 
 * If you chose **Bridged mode:** https://yourlogin.42.fr
 * If you chose **NAT mode:** https://yourlogin.42.fr:8443
@@ -1237,10 +1249,11 @@ services:
       # Verifies Redis availability by performing a handshake:
       # - redis-cli ping: sends the standard PING command to the server.
       # - -h 127.0.0.1: targets the local instance within the container.
+      # - -p 6379: explicitly enforces the connection on the default Redis port.
       # - -a "$$(cat ...)": securely authenticates using the password from the Docker secret.
       # - grep PONG: confirms the server specifically responded with the expected 'PONG'.
       # - || exit 1: ensures the container is marked 'unhealthy' if the handshake fails.
-      test: ["CMD-SHELL", "redis-cli -h 127.0.0.1 -a \"$$(cat /run/secrets/redis_password)\" ping | grep PONG || exit 1"]
+      test: ["CMD-SHELL", "redis-cli -h 127.0.0.1 -p 6379 -a \"$$(cat /run/secrets/redis_password)\" ping | grep PONG || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -1258,10 +1271,10 @@ secrets:
     file: ../secrets/redis_password.txt
 ```
 
-The WordPress `entrypoint.sh` file also needs editing, add the following between the secondary account creation and the ownership and permissions configuration:
+The WordPress `entrypoint.sh` file also needs editing. Add the following between the secondary account creation and the ownership and permissions configuration:
 
 ```bash
-# Redis Setup (Bonus)
+    # Redis Setup (Bonus)
     echo "Configuring Redis Cache with authentication..."
     
     # Fetch the redis password from secret to use it in wp-config
@@ -1276,9 +1289,11 @@ The WordPress `entrypoint.sh` file also needs editing, add the following between
 
     # Enables the object cache to start using Redis
     wp redis enable --allow-root
+
+    # Finalizes file permissions for the web server (www-data)
 ```
 
-Rebuild your infrastructure using `make re` to apply the changes and verify that everything is working as expected, by opening your browser and go to:
+Rebuild your infrastructure using `make re` to apply the changes. Verify that everything is working as expected by opening your browser and go to:
 
 https://yourlogin.42.fr/wp-admin
 
@@ -1380,6 +1395,7 @@ cat <<EOF > /etc/vsftpd.conf
 # Run in the foreground (required for Docker containers)
 listen=YES
 listen_ipv6=NO
+listen_port=21
 
 # Access rights for local users
 local_enable=YES
@@ -1751,7 +1767,7 @@ Create the necessary folders for the Arcane requirements:
 mkdir -p ~/inception/srcs/requirements/bonus/arcane/tools
 ```
 
-Update your `Makefile` to include the Arcane data directory:
+Update the following line of your `Makefile` to include the Arcane data directory:
 ```makefile
 @mkdir -p $(DATA_PATH)/mariadb $(DATA_PATH)/wordpress $(DATA_PATH)/arcane
 ```
@@ -1973,7 +1989,7 @@ if [ -n "$HAPROXY_HOST" ]; then
     export DOCKER_HOST="tcp://${HAPROXY_HOST}:2375"
 fi
 
-# 3. Execute the command from CMD ...
+# 3. Execute the command from CMD
 ```
 
 It is now time to update the `docker-compose.yml` file:

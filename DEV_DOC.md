@@ -244,7 +244,7 @@ From your **host machine's terminal**, verify the SSH connection:
     ssh yourlogin@localhost -p 2222
     ```
 
-Confirm the fingerprint (`yes`) and enter your user password. If your prompt changes to yourlogin@inception:~$, it means everything is working correctly.
+Confirm the fingerprint (`yes`) and enter your user password. If your prompt changes to `yourlogin@inception:~$`, it means everything is working correctly.
 
 #### Connect VSCode via SSH
 
@@ -252,7 +252,7 @@ Now we will use this connection to link Visual Studio Code.
 
 1. Open VSCode on your physical computer.
 
-2. Go to the Extensions tab (the small squares icon on the left) or press Ctrl+Shift+X (or Cmd+Shift+X on Mac).
+2. Go to the Extensions tab (the small squares icon on the left) or press `Ctrl+Shift+X` (or `Cmd+Shift+X` on Mac).
 
 3. Search for and install the official Remote - SSH extension (published by Microsoft).
 
@@ -260,7 +260,7 @@ Then, edit the local SSH configuration file:
 
 4. Open **VSCode** locally and install the **"Remote - SSH"** extension.
 
-5. Open the command palette (`Ctrl+Shift+P` / `Cmd+Shift+P`), type **SSH: Open SSH Configuration File**.
+5. Open the command palette (`Ctrl+Shift+P` / `Cmd+Shift+P`), type `SSH: Open SSH Configuration File`.
 
 6. Select your user's config file (e.g., `~/.ssh/config`) and add the corresponding block:
 
@@ -283,11 +283,11 @@ Then, edit the local SSH configuration file:
 
     We can now connect to the virtual machine via SSH from VSCode.
 
-7. In VSCode, click the `><` icon (bottom-left) -> **Connect to Host...** -> **inception**.
+7. In VSCode, click the `><` icon (bottom-left) -> `Connect to Host...` -> `inception`.
 
 8. A new VSCode window will open and you will then be prompted to enter your password (the one for the "yourlogin" user).
 
-9. Once connected, go to the VSCode file explorer (on the left), click **Open Folder**, then select `/home/<yourlogin>` and confirm.
+9. Once connected, go to the VSCode file explorer (on the left), click `Open Folder`, then select `/home/<yourlogin>` and confirm.
 
 10. To avoid VSCode asking for your password too often, you can set up an SSH key. If you are not interested, skip to the "Local Domain DNS Routing" chapter. Otherwise, if you already have one, skip to the next step.
 
@@ -467,7 +467,7 @@ echo -n "your_wp_user_password" > wp_user_password.txt
 
 ### 9. Docker-Compose & Makefile
 
-Now that our environment variables and secrets are ready, it's time to create the docker-compose.yml file. This file acts as the architect of your infrastructure, defining how our services interact, which networks they use, and where they store their data:
+Now that our environment variables and secrets are ready, it's time to create the `docker-compose.yml` file. This file acts as the architect of your infrastructure, defining how our services interact, which networks they use, and where they store their data:
 
 ```
 touch ~/inception/srcs/docker-compose.yml
@@ -2027,4 +2027,4 @@ services:
     logging: *default-logging
 ```
 
-To verify your secure setup, simply run make re, refresh your Arcane dashboard, and monitor `docker logs -f haproxy` to watch your API requests being safely filtered and routed in real-time.
+To verify your secure setup, simply run `make re`, refresh your Arcane dashboard, and monitor `docker logs -f haproxy` to watch your API requests being safely filtered and routed in real-time.

@@ -22,7 +22,7 @@ To manage the state of the infrastructure, use the provided Makefile commands fr
 ## Accessing the Services
 Ensure that your host machine's `/etc/hosts` file maps the domain `gdosch.42.fr` to your Virtual Machine's IP address.
 * **Main Website (WordPress):** `https://gdosch.42.fr` (Accept the self-signed SSL certificate warning).
-* **WordPress Admin Panel:** `https://gdosch.42.fr/wp-admin` (Log in with your WP_ADMIN credentials).
+* **WordPress Admin Panel:** `https://gdosch.42.fr/wp-admin` (Log in with your `WP_ADMIN` credentials).
 * **FTP Access:** Connect using an FTP client (like FileZilla) to `gdosch.42.fr` on port `21`.
 * **Static Website:** `http://gdosch.42.fr:8081`
 * **Adminer (Database Admin):** `http://gdosch.42.fr:8080`

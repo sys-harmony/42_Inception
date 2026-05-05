@@ -30,30 +30,6 @@ chmod -R 755 /var/www/html
 # vsftpd requires this specific directory to run for isolation (chroot)
 mkdir -p /var/run/vsftpd/empty
 
-# Generate the vsftpd configuration used by the container
-cat <<EOF > /etc/vsftpd.conf
-# Run in the foreground (required for Docker containers)
-listen=YES
-listen_ipv6=NO
-listen_port=21
-
-# Access rights for local users
-local_enable=YES
-write_enable=YES
-local_umask=022
-
-# Security & Chroot (isolates the user in their home directory)
-chroot_local_user=YES
-allow_writeable_chroot=YES
-secure_chroot_dir=/var/run/vsftpd/empty
-
-# Passive mode configuration (Crucial for Docker NAT networking)
-pasv_enable=YES
-pasv_min_port=40000
-pasv_max_port=40005
-pasv_address=0.0.0.0
-EOF
-
 echo "Starting FTP server for user: $FTP_USER"
 
 # 5. Execute the command from CMD

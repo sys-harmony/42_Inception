@@ -6,6 +6,9 @@ RUN apt-get update && apt-get install -y \
 	vsftpd \
 	&& rm -rf /var/lib/apt/lists/*
 
+# Copy the server configuration file
+COPY conf/vsftpd.conf /etc/vsftpd.conf
+
 # Copy and prepare the entrypoint script
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

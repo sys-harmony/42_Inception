@@ -403,8 +403,7 @@ Create the necessary folders:
 ```bash
 mkdir -p \
     ~/inception/srcs/requirements/mariadb/tools \
-    ~/inception/srcs/requirements/nginx/conf \
-    ~/inception/srcs/requirements/nginx/tools \
+    ~/inception/srcs/requirements/nginx/{conf,tools} \
     ~/inception/srcs/requirements/wordpress/tools \
     ~/inception/srcs/requirements/tools \
     ~/inception/secrets
@@ -443,11 +442,6 @@ EOF
 Make sure to replace `yourlogin` with your actual 42 username.
 
 While `.env` files are often used to store sensitive data, security best practices recommend keeping critical settings (i.e. passwords, keys and tokens) into dedicated secret files. Replace the values in quotes with passwords of your choice securely in `~/inception/secrets/`:
-
-> [!NOTE]
-> **Design Architecture: Internal Ports in .env**
-> You might wonder why internal ports (like 3306 for MariaDB or 9000 for PHP-FPM) are not defined in the `.env` file. 
-> In an isolated Docker Bridge network like ours, every container has its own IP and listens on its default port with zero risk of collision. Moving these internal ports to the `.env` would unnecessarily complexify the configuration (especially for Nginx which doesn't read env variables natively) and make the code harder to read. We explicitly document these ports in the `Dockerfile` and `docker-compose.yml` to maintain clear architectural boundaries.
 
 ```bash
 cd ~/inception/secrets
@@ -1318,7 +1312,7 @@ FTP_USER=yourlogin
 
 Let's create the structure:
 ```bash
-mkdir -p ~/inception/srcs/requirements/bonus/ftp/tools
+mkdir -p ~/inception/srcs/requirements/bonus/ftp/{conf,tools}
 ```
 
 We will now create the FTP `Dockerfile`:
@@ -1336,6 +1330,9 @@ RUN apt-get update && apt-get install -y \
 	vsftpd \
 	&& rm -rf /var/lib/apt/lists/*
 
+# Copy the server configuration file
+COPY conf/vsftpd.conf /etc/vsftpd.conf
+
 # Copy and prepare the entrypoint script
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
@@ -1348,6 +1345,35 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Default binary executed as PID 1 via the entrypoint's 'exec "$@"'
 CMD ["vsftpd", "/etc/vsftpd.conf"]
+```
+
+Next, let's create the `vsftpd` configuration file:
+```bash
+touch ~/inception/srcs/requirements/bonus/ftp/conf/vsftpd.conf
+```
+
+Copy and paste the following configuration:
+```ini
+# Run in the foreground (required for Docker containers)
+listen=YES
+listen_ipv6=NO
+listen_port=21
+
+# Access rights for local users
+local_enable=YES
+write_enable=YES
+local_umask=022
+
+# Security & Chroot (isolates the user in their home directory)
+chroot_local_user=YES
+allow_writeable_chroot=YES
+secure_chroot_dir=/var/run/vsftpd/empty
+
+# Passive mode configuration (Crucial for Docker NAT networking)
+pasv_enable=YES
+pasv_min_port=40000
+pasv_max_port=40005
+pasv_address=0.0.0.0
 ```
 
 **vsftpd** requires a system user to operate. We create it dynamically at runtime with an `entrypoint.sh` file:
@@ -1389,30 +1415,6 @@ chmod -R 755 /var/www/html
 # 4. Prepare the runtime environment
 # vsftpd requires this specific directory to run for isolation (chroot)
 mkdir -p /var/run/vsftpd/empty
-
-# Generate the vsftpd configuration used by the container
-cat <<EOF > /etc/vsftpd.conf
-# Run in the foreground (required for Docker containers)
-listen=YES
-listen_ipv6=NO
-listen_port=21
-
-# Access rights for local users
-local_enable=YES
-write_enable=YES
-local_umask=022
-
-# Security & Chroot (isolates the user in their home directory)
-chroot_local_user=YES
-allow_writeable_chroot=YES
-secure_chroot_dir=/var/run/vsftpd/empty
-
-# Passive mode configuration (Crucial for Docker NAT networking)
-pasv_enable=YES
-pasv_min_port=40000
-pasv_max_port=40005
-pasv_address=0.0.0.0
-EOF
 
 echo "Starting FTP server for user: $FTP_USER"
 
@@ -1531,8 +1533,7 @@ Create the project structure:
 
 ```bash
 mkdir -p \
-    ~/inception/srcs/requirements/bonus/static/www \
-    ~/inception/srcs/requirements/bonus/static/conf
+    ~/inception/srcs/requirements/bonus/static/{conf,www}
 ```
 
 Let's create the `Dockerfile` for the static website:

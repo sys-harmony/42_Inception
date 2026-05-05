@@ -1,29 +1,31 @@
-# Stage 1: Temporary stage to get the binary
-FROM ghcr.io/getarcaneapp/arcane:v1.18.1 AS builder
-
-# Stage 2: Final image based on Debian 12
+# Use Debian Bookworm as the base image
 FROM debian:12
 
-# Install requirements
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+# Update system and install required base utilities
+RUN apt-get update && apt-get install -y \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-# Setup application directory
+# Set working directory for the application
 WORKDIR /app
-RUN mkdir -p /app/data
 
-# Copy the binary from the builder stage
-COPY --from=builder /app/arcane /usr/local/bin/arcane
-RUN chmod +x /usr/local/bin/arcane
+# Download the pre-compiled Linux AMD64 binary directly using curl
+RUN curl -fsSL https://github.com/getarcaneapp/arcane/releases/download/v1.18.1/arcane_linux_amd64 -o arcane \
+    && chmod +x arcane
 
-# Copy and prepare the entrypoint script
+# Copy the entrypoint script into the container and make it executable
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose port 3552
+# Expose the default Arcane port
 EXPOSE 3552
 
-# Prepares the environment (secrets) before launching the application
+# Set Docker host to use the custom TCP proxy
+# ENV DOCKER_HOST=tcp://docker-proxy:2375
+
+# Set the entrypoint to our script so it loads secrets first
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
-# Default binary executed as PID 1 via the entrypoint's 'exec "$@"'
-CMD ["arcane"]
+# Start the application directly from the binary
+CMD ["./arcane"]

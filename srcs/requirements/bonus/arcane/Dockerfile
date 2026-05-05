@@ -21,9 +21,6 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # Expose the default Arcane port
 EXPOSE 3552
 
-# Set Docker host to use the custom TCP proxy
-# ENV DOCKER_HOST=tcp://docker-proxy:2375
-
 # Set the entrypoint to our script so it loads secrets first
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 

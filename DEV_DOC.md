@@ -429,7 +429,7 @@ DOMAIN_NAME=yourlogin.42.fr
 # MARIADB SETUP
 MARIADB_USER=yourlogin
 MARIADB_DATABASE=wordpress
-MARIADB_HOSTNAME=mariadb
+MARIADB_HOST=mariadb
 
 # WORDPRESS SETUP
 WP_TITLE=Inception
@@ -508,7 +508,7 @@ services:
       # Explicit mapping: only injects required variables instead of using 'env_file: .env'
       - MARIADB_DATABASE=${MARIADB_DATABASE}
       - MARIADB_USER=${MARIADB_USER}
-      - MARIADB_HOSTNAME=${MARIADB_HOSTNAME}
+      - MARIADB_HOST=${MARIADB_HOST}
     secrets:
       - db_password
       - db_root_password
@@ -542,7 +542,7 @@ services:
       start_period: 30s # Gives wp-cli enough time to download and install everything during the first boot
     environment:
       # Explicit mapping: only injects required variables instead of using 'env_file: .env'
-      - MARIADB_HOSTNAME=${MARIADB_HOSTNAME}
+      - MARIADB_HOST=${MARIADB_HOST}
       - MARIADB_DATABASE=${MARIADB_DATABASE}
       - MARIADB_USER=${MARIADB_USER}
       - WP_ADMIN_USER=${WP_ADMIN_USER}
@@ -872,7 +872,7 @@ WP_USER_PASSWORD=$(cat /run/secrets/wp_user_password)
 # Ensures all necessary credentials are present before attempting installation
 
 # Database checks
-if [ -z "$MARIADB_HOSTNAME" ] || [ -z "$MARIADB_DATABASE" ] || [ -z "$MARIADB_USER" ] || [ -z "$MARIADB_PASSWORD" ]; then
+if [ -z "$MARIADB_HOST" ] || [ -z "$MARIADB_DATABASE" ] || [ -z "$MARIADB_USER" ] || [ -z "$MARIADB_PASSWORD" ]; then
     echo "Error: Missing database environment variables or secrets." >&2
     exit 1
 fi
@@ -892,7 +892,7 @@ fi
 # 3. Service Initialization & Dependencies
 # Service availability check: ensures the database is up before running WP-CLI commands
 echo "Waiting for MariaDB to be ready..."
-until mariadb -h"$MARIADB_HOSTNAME" -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
+until mariadb -h"$MARIADB_HOST" -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
     sleep 2
 done
 
@@ -909,7 +909,7 @@ if [ ! -f "/var/www/html/wp-config.php" ]; then
         --dbname="$MARIADB_DATABASE" \
         --dbuser="$MARIADB_USER" \
         --dbpass="$MARIADB_PASSWORD" \
-        --dbhost="$MARIADB_HOSTNAME" \
+        --dbhost="$MARIADB_HOST" \
         --allow-root
 
     # Configures the database and creates the primary administrator account
@@ -1231,6 +1231,7 @@ To ensure a deterministic startup and service health monitoring, we update the `
 # 1. Update the 'wordpress' service and add the 'redis' one
 services:
   # ... other services
+
   wordpress:
     # ... other configs
     depends_on:
@@ -1244,7 +1245,10 @@ services:
       - redis_password
       - wp_admin_password
       - wp_user_password
-  # ...
+    # ... other configs
+
+  # ... other services
+
   redis:
     build:
       context: ./requirements/bonus/redis
@@ -1435,7 +1439,7 @@ It is now time to update the `docker-compose.yml` file:
     # Replace 'env_file: .env' with explicit mapping:
     environment:
       # Explicit mapping: only injects required variables instead of using 'env_file: .env'
-      - MARIADB_HOSTNAME=${MARIADB_HOSTNAME}
+      - MARIADB_HOST=${MARIADB_HOST}
       - MARIADB_DATABASE=${MARIADB_DATABASE}
       - MARIADB_USER=${MARIADB_USER}
       - WP_ADMIN_USER=${WP_ADMIN_USER}
@@ -1773,7 +1777,7 @@ Update your `Makefile` to include the Arcane data directory:
 @mkdir -p $(DATA_PATH)/mariadb $(DATA_PATH)/wordpress $(DATA_PATH)/arcane
 ```
 
-It's time to create the Arcane `Dockerfile`. We'll use a multi-stage build to keep our image lightweight while strictly basing our final container on Debian 12.
+It's time to create the Arcane `Dockerfile`:
 
 ```bash
 touch ~/inception/srcs/requirements/bonus/arcane/Dockerfile
@@ -1883,3 +1887,133 @@ Rebuild your infrastructure using `make re` and open the following URL — make 
 http://yourlogin.42.fr:3552
 
 Follow the setup instructions to create your admin account. The default username and password are `arcane` and `arcane-admin`. You can now see all your Inception containers (WordPress, NGINX, MariaDB) in a single dashboard.
+
+### Bonus 6: HAPROXY
+
+While Arcane is now up and running, it currently has unrestricted read and write access to the host's Docker socket — a major security risk. To enforce best practices, we will secure our infrastructure by implementing a socket proxy using `HAProxy`.
+
+Let's create the structure:
+```bash
+mkdir -p ~/inception/srcs/requirements/bonus/haproxy/conf
+```
+
+Declare the proxy's hostname by adding the following environment variable to your .env file:
+```env
+# HAPROXY SETUP (BONUS)
+HAPROXY_HOST=haproxy
+```
+
+Create the `Dockerfile`:
+
+```bash
+touch ~/inception/srcs/requirements/bonus/haproxy/Dockerfile
+```
+
+And copy the following in it:
+
+```dockerfile
+# Use Debian Bookworm as the base image
+FROM debian:12
+
+# Update system and install HAProxy
+RUN apt-get update && apt-get install -y \
+	haproxy \
+	&& rm -rf /var/lib/apt/lists/*
+
+# Copy our custom security configuration
+COPY conf/haproxy.cfg /usr/local/etc/haproxy/haproxy.cfg
+
+# Expose the proxy port
+EXPOSE 2375
+
+# Run HAProxy in the foreground
+CMD ["haproxy", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+```
+
+Then, create the `haproxy.cfg` configuration file:
+```bash
+touch ~/inception/srcs/requirements/bonus/haproxy/conf/haproxy.cfg
+```
+
+And copy the following in it:
+```conf
+global
+    log stdout format raw local0
+
+defaults
+    mode http
+    timeout connect 5000ms
+    timeout client 50000ms
+    timeout server 50000ms
+    log global
+    option httplog
+
+frontend docker-api
+    bind *:2375
+    
+    # 1. Endpoints required by Arcane to manage the infrastructure
+    acl allowed_paths path_beg /v1. /events /_ping /version /info /containers /images /networks /volumes /exec /auth /secrets
+
+    # 2. Strictly forbidden endpoints to prevent host system takeover
+    acl forbidden_paths path_beg /build /swarm /system /nodes /services /tasks /plugins /distribution /commit /configs
+
+    # 3. Apply security filters
+    http-request deny if forbidden_paths
+    http-request allow if allowed_paths
+    
+    # 4. Default deny for any unlisted endpoint
+    http-request deny 
+
+    default_backend docker-socket
+
+backend docker-socket
+    # Forward safe requests to the actual Docker socket
+    server docker /var/run/docker.sock
+```
+
+Next, let's update Arcane's `entrypoint.sh` script to route its Docker API calls through our new proxy. Insert the following conditional block right after loading the secrets, and just before the exec command:
+
+```bash
+# 2. Configures the Docker host if the HAPROXY_HOST variable is provided
+if [ -n "$HAPROXY_HOST" ]; then
+    export DOCKER_HOST="tcp://${HAPROXY_HOST}:2375"
+fi
+
+# 3. Execute the command from CMD ...
+```
+
+It is now time to update the `docker-compose.yml` file:
+
+```yaml
+# Update the 'arcane' service and add the 'haproxy' one
+services:
+  # ... other services
+
+  arcane:
+    # ... other configs
+    depends_on:
+      haproxy:
+        condition: service_started
+    # ... other configs
+    environment:
+      - HAPROXY_HOST=${HAPROXY_HOST}
+    volumes:
+      # Remove: /var/run/docker.sock:/var/run/docker.sock:rw
+      - arcane_data:/app/data
+    # ... other configs
+
+  haproxy:
+    build:
+      context: ./requirements/bonus/haproxy
+    image: haproxy:inception-v1
+    container_name: haproxy
+    restart: unless-stopped
+    volumes:
+      # Only the proxy has access to the real docker socket
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+    networks:
+      - inception
+    logging: *default-logging
+```
+
+To verify your secure setup, simply run make re, refresh your Arcane dashboard, and monitor `docker logs -f haproxy` to watch your API requests being safely filtered and routed in real-time.

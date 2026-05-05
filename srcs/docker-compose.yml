@@ -30,7 +30,7 @@ services:
       # Explicit mapping: only injects required variables instead of using 'env_file: .env'
       - MARIADB_DATABASE=${MARIADB_DATABASE}
       - MARIADB_USER=${MARIADB_USER}
-      - MARIADB_HOSTNAME=${MARIADB_HOSTNAME}
+      - MARIADB_HOST=${MARIADB_HOST}
     secrets:
       - db_password
       - db_root_password
@@ -64,7 +64,7 @@ services:
       start_period: 30s # Gives wp-cli enough time to download and install everything during the first boot
     environment:
       # Explicit mapping: only injects required variables instead of using 'env_file: .env'
-      - MARIADB_HOSTNAME=${MARIADB_HOSTNAME}
+      - MARIADB_HOST=${MARIADB_HOST}
       - MARIADB_DATABASE=${MARIADB_DATABASE}
       - MARIADB_USER=${MARIADB_USER}
       - WP_ADMIN_USER=${WP_ADMIN_USER}
@@ -192,17 +192,33 @@ services:
     image: arcane:inception-v1
     container_name: arcane
     restart: unless-stopped
+    depends_on:
+      haproxy:
+        condition: service_started
+    environment:
+      - HAPROXY_HOST=${HAPROXY_HOST}
     secrets:
       - arc_encryption_key
       - arc_jwt_secret
     volumes:
-      # Allows Arcane to interact with the host Docker daemon
-      - /var/run/docker.sock:/var/run/docker.sock:rw
       - arcane_data:/app/data
     networks:
       - inception
     ports:
       - "3552:3552"
+    logging: *default-logging
+
+  haproxy:
+    build:
+      context: ./requirements/bonus/haproxy
+    image: haproxy:inception-v1
+    container_name: haproxy
+    restart: unless-stopped
+    volumes:
+      # Only the proxy has access to the real docker socket
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+    networks:
+      - inception
     logging: *default-logging
 
 # Docker Secrets: Files are mounted as temporary files inside /run/secrets/ in containers

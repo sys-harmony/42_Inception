@@ -527,8 +527,6 @@ services:
     depends_on:
       mariadb:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     healthcheck:
       # Verifies that the PHP-FPM process is active and running:
       # - pgrep php-fpm: searches for any process matching the PHP-FPM name.
@@ -553,7 +551,6 @@ services:
       - WP_USER_EMAIL=${WP_USER_EMAIL}
     secrets:
       - db_password
-      - redis_password
       - wp_admin_password
       - wp_user_password
     volumes:
@@ -633,7 +630,7 @@ touch ~/inception/Makefile
 And copy the following into it and make sure to use actual Tabs instead of spaces for indentation:
 
 ```makefile
-DATA_PATH = /home/gdosch/data
+DATA_PATH = /home/yourlogin/data
 COMPOSE_FILE = srcs/docker-compose.yml
 
 .PHONY: all build up down mariadb clean fclean re
@@ -928,21 +925,7 @@ if [ ! -f "/var/www/html/wp-config.php" ]; then
         --user_pass="$WP_USER_PASSWORD" \
         --allow-root
 
-    # Redis Setup (Bonus)
-    echo "Configuring Redis Cache with authentication..."
-    
-    # Fetch the redis password from secret to use it in wp-config
-    REDIS_PWD=$(cat /run/secrets/redis_password)
-
-    wp plugin install redis-cache --activate --allow-root
-
-    # Injects Redis connection constants into wp-config.php
-    wp config set WP_REDIS_HOST redis --allow-root
-    wp config set WP_REDIS_PORT 6379 --raw --allow-root
-    wp config set WP_REDIS_PASSWORD "$REDIS_PWD" --allow-root
-
-    # Enables the object cache to start using Redis
-    wp redis enable --allow-root
+    # Note: If implementing the Redis bonus, inject the configuration logic here.
 
     # Finalizes file permissions for the web server (www-data)
     chown -R www-data:www-data /var/www/html
@@ -1152,6 +1135,11 @@ make
 
 Your system is alive at `https://yourlogin.42.fr` (Accept the self-signed certificate warning in your browser).
 
+Your system is now alive! You can access it via your browser:
+
+* If you chose **Bridged mode:** https://yourlogin.42.fr
+* If you chose **NAT mode:** https://yourlogin.42.fr:8443
+  
 ---
 
 ## BONUS Deployments
@@ -1938,36 +1926,51 @@ touch ~/inception/srcs/requirements/bonus/haproxy/conf/haproxy.cfg
 And copy the following in it:
 ```conf
 global
+    # Sends logs to the container's standard output (visible via 'docker logs')
     log stdout format raw local0
 
 defaults
+    # HAProxy will operate at Layer 7 (HTTP) to allow path-based filtering
     mode http
+    
+    # Standard timeout configurations for connection, client, and server response
     timeout connect 5000ms
     timeout client 50000ms
     timeout server 50000ms
+    
+    # Inherit logging configuration from the global section
     log global
+    
+    # Generates rich logs for HTTP requests, including paths, status codes, and timings
     option httplog
 
 frontend docker-api
+    # Listens on all interfaces on port 2375 (default Docker TCP port)
     bind *:2375
     
-    # 1. Endpoints required by Arcane to manage the infrastructure
-    acl allowed_paths path_beg /v1. /events /_ping /version /info /containers /images /networks /volumes /exec /auth /secrets
+    # 1. ACLs: Identify safe vs sensitive Docker API endpoints
+    # Use regex to allow versioned paths (e.g., /v1.18.1/containers) while strictly limiting the endpoints
+    acl allowed_paths path_reg ^/(v[0-9.]+/)?(events|_ping|version|info|containers|images|networks|volumes|exec|auth|secrets)
+    acl forbidden_paths path_reg ^/(v[0-9.]+/)?(build|swarm|system|nodes|services|tasks|plugins|distribution|commit|configs)
 
-    # 2. Strictly forbidden endpoints to prevent host system takeover
-    acl forbidden_paths path_beg /build /swarm /system /nodes /services /tasks /plugins /distribution /commit /configs
-
-    # 3. Apply security filters
+    # 2. Security Rules: Immediate deny on sensitive paths, then allow specific ones
+    
+    # Rule A: Immediately reject any request targeting highly sensitive endpoints
     http-request deny if forbidden_paths
+    
+    # Rule B: Accept requests that match the allowed patterns (listing containers, images, etc.)
     http-request allow if allowed_paths
     
-    # 4. Default deny for any unlisted endpoint
+    # Rule C: Default security stance - if it's not explicitly allowed above, block it.
+    # This 'Zero Trust' approach ensures that unknown or new API features remain inaccessible.
     http-request deny 
 
+    # Route all authorized traffic to the internal Docker socket
     default_backend docker-socket
 
 backend docker-socket
-    # Forward safe requests to the actual Docker socket
+    # Forward the sanitized HTTP traffic to the host's Docker socket.
+    # The /var/run/docker.sock path is mounted as a volume in the container.
     server docker /var/run/docker.sock
 ```
 

@@ -11,6 +11,7 @@ Our stack provides a fully functional web environment consisting of:
 * **Static Website:** A portfolio/status page hosted on Lighttpd.
 * **Adminer:** A web-based database management interface.
 * **Arcane:** A monitoring tool for Docker containers.
+* **HAProxy:** A secure proxy protecting Docker's internal API.
 
 ## Starting and Stopping the Project
 To manage the state of the infrastructure, use the provided Makefile commands from the root directory:

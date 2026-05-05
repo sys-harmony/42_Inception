@@ -538,17 +538,7 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s # Gives wp-cli enough time to download and install everything during the first boot
-    environment:
-      # Explicit mapping: only injects required variables instead of using 'env_file: .env'
-      - MARIADB_HOST=${MARIADB_HOST}
-      - MARIADB_DATABASE=${MARIADB_DATABASE}
-      - MARIADB_USER=${MARIADB_USER}
-      - WP_ADMIN_USER=${WP_ADMIN_USER}
-      - WP_ADMIN_EMAIL=${WP_ADMIN_EMAIL}
-      - DOMAIN_NAME=${DOMAIN_NAME}
-      - WP_TITLE=${WP_TITLE}
-      - WP_USER=${WP_USER}
-      - WP_USER_EMAIL=${WP_USER_EMAIL}
+    env_file: .env
     secrets:
       - db_password
       - wp_admin_password
@@ -1419,6 +1409,7 @@ exec "$@"
 Passive mode is essential here, as Docker uses NAT networking. Without it, the FTP client would not be able to list or transfer files correctly.
 
 It is now time to update the `docker-compose.yml` file:
+
 ```yaml
 # 1. Update the 'wordpress' service to prevent access
 # to the unrelated 'FTP_USER' environment variable.

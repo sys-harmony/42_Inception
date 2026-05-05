@@ -5,7 +5,7 @@
 ## Description
 The Inception project aims to broaden our knowledge of system administration by using Docker. The goal is to virtualize an entire infrastructure using Docker Compose, creating multiple interacting services within custom containers, all running under a single Debian 12 base image.
 
-This project implements a complete web hosting infrastructure including a Nginx reverse proxy, a MariaDB database, a WordPress site (PHP-FPM) cached by Redis, a static website hosted on Lighttpd, an Adminer database management tool, an FTP server, and the Arcane container monitoring tool.
+This project implements a complete web hosting infrastructure including a Nginx reverse proxy, a MariaDB database, a WordPress site (PHP-FPM) cached by Redis, a static website hosted on Lighttpd, an Adminer database management tool, an FTP server, the Arcane container monitoring tool, and a secure HAProxy socket router.
 
 ### Technical Design & Comparisons
 

@@ -38,6 +38,7 @@ This will build the images and start all services in the background. Please refe
 * **WordPress CLI:** https://wp-cli.org/
 * **Redis Documentation:** https://redis.io/documentation
 * **vsftpd Documentation:** https://security.appspot.com/vsftpd.html
+* **lighttpd Documentation:** https://redmine.lighttpd.net/projects/lighttpd/wiki/Docs
 * **Arcane Documentation:** https://getarcane.app/docs
 * **HAProxy Documentation:** https://docs.haproxy.org/
-* **Use of AI:** Artificial Intelligence (Google Gemini) was used during this project as a pedagogical assistant. It was primarily utilized to understand complex Docker networking concepts and review the security implementation of Docker Secrets. AI was also used to proofread and structure this documentation.
+* **Use of AI:** Artificial Intelligence (Google Gemini) was used during this project as a pedagogical assistant. It was primarily utilized to understand complex Docker networking concepts and review the security implementation of Docker Secrets. AI also served as the primary documentation for installing Adminer and creating the HTML for the static website. Finally, it was used to proofread and structure this documentation.

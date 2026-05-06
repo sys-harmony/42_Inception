@@ -1114,7 +1114,7 @@ http {
 }
 ```
 
-Sources:  
+Sources:
 https://docs.docker.com/get-started/docker-concepts/building-images/writing-a-dockerfile/  
 https://docs.docker.com/reference/dockerfile/#entrypoint  
 https://nginx.org/en/docs/beginners_guide.html
@@ -1292,6 +1292,8 @@ Rebuild your infrastructure using `make re` to apply the changes. Verify that ev
 https://yourlogin.42.fr/wp-admin
 
 Log in using your credentials, then navigate to Settings → Redis. If you can read “Status: Connected” displayed in green, everything works fine.
+
+Source: https://redis.io/documentation
 
 ---
 
@@ -1523,6 +1525,8 @@ Alternatively, you can test the connection interactively using the `ftp` client 
 
 If the connection is successful, you should see a listing of the files in your WordPress directory.
 
+Source: https://security.appspot.com/vsftpd.html
+
 ---
 
 ### Bonus 3: STATIC WEBSITE
@@ -1661,6 +1665,8 @@ Rebuild your infrastructure using `make re` to apply the changes. To test the st
 
 http://yourlogin.42.fr:8081
 
+Source: https://redmine.lighttpd.net/projects/lighttpd/wiki/Docs
+
 ---
 
 ### Bonus 4: ADMINER
@@ -1755,15 +1761,16 @@ If you can log in and see your WordPress tables (wp_users, wp_posts, etc.), Admi
 
 ### Bonus 5: ARCANE
 
-Arcane is a modern, lightweight, and high-performance Docker management interface built with Go and SvelteKit. It allows you to monitor your Inception infrastructure, view logs in real-time, and manage containers through a beautiful Web UI.
+Arcane is a modern, lightweight, and high-performance Docker management interface built with Go and SvelteKit. It allows you to monitor your Inception infrastructure, view logs in real-time, and manage containers through a sleek web interface.
 
-We first need to create two new secrets:
+First, we need to generate two new secrets using OpenSSL. We use long random strings because they are cryptographically secure and, unlike passwords, you will never need to type them manually:
 ```bash
-echo -n 'MaSuperCleDeChiffrement32Chars!!' > ~/inception/secrets/arc_encryption_key.txt
-echo -n 'MonAutreCleJWTTresSecrete424242!' > ~/inception/secrets/arc_jwt_secret.txt
+openssl rand -hex 32 | tr -d '\n' > ~/inception/secrets/arc_encryption_key.txt
+openssl rand -hex 32 | tr -d '\n' > ~/inception/secrets/arc_jwt_secret.txt
 ```
+The `tr -d '\n'` command strips the trailing newline to prevent any potential parsing errors.
 
-Create the necessary folders for the Arcane requirements:
+Now, create the necessary directories for this service:
 ```bash
 mkdir -p ~/inception/srcs/requirements/bonus/arcane/tools
 ```
@@ -1883,6 +1890,8 @@ Rebuild your infrastructure using `make re` and open the following URL — make 
 http://yourlogin.42.fr:3552
 
 Follow the setup instructions to create your admin account. The default username and password are `arcane` and `arcane-admin`. You can now see all your Inception containers (WordPress, NGINX, MariaDB) in a single dashboard.
+
+Source: https://getarcane.app/docs
 
 ### Bonus 6: HAPROXY
 
@@ -2028,3 +2037,5 @@ services:
 ```
 
 To verify your secure setup, simply run `make re`, refresh your Arcane dashboard, and monitor `docker logs -f haproxy` to watch your API requests being safely filtered and routed in real-time.
+
+Source: https://docs.haproxy.org/

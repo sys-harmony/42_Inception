@@ -1765,10 +1765,9 @@ Arcane is a modern, lightweight, and high-performance Docker management interfac
 
 First, we need to generate two new secrets using OpenSSL. We use long random strings because they are cryptographically secure and, unlike passwords, you will never need to type them manually:
 ```bash
-openssl rand -hex 32 | tr -d '\n' > ~/inception/secrets/arc_encryption_key.txt
-openssl rand -hex 32 | tr -d '\n' > ~/inception/secrets/arc_jwt_secret.txt
+openssl rand -hex 32 > ~/inception/secrets/arc_encryption_key.txt
+openssl rand -hex 32 > ~/inception/secrets/arc_jwt_secret.txt
 ```
-The `tr -d '\n'` command strips the trailing newline to prevent any potential parsing errors.
 
 Now, create the necessary directories for this service:
 ```bash
@@ -1895,7 +1894,7 @@ Source: https://getarcane.app/docs
 
 ### Bonus 6: HAPROXY
 
-While Arcane is now up and running, it currently has unrestricted read and write access to the host's Docker socket — a major security risk. To enforce best practices, we will secure our infrastructure by implementing a socket proxy using `HAProxy`.
+While Arcane is now up and running, it currently has unrestricted read and write access to the host's Docker socket (`/var/run/docker.sock`) — a major security risk if the container gets compromised. To enforce the principle of least privilege, we will secure our infrastructure by implementing a socket proxy using `HAProxy`.
 
 Let's create the structure:
 ```bash
@@ -1947,6 +1946,13 @@ global
     log stdout format raw local0
 
 defaults
+    # Note: If we wanted to operate at Layer 4 (TCP), the code would look like this:
+    # mode tcp
+    # However, Layer 4 is not sufficient here because it only routes packets based on IPs 
+    # and ports. It cannot look inside the HTTP payload, which means we wouldn't be able
+    # to read the URL requests and filter the Docker API calls (e.g. allowing /containers 
+    # but blocking /build). We need Layer 7 inspection to enforce our path-based ACLs.
+
     # HAProxy will operate at Layer 7 (HTTP) to allow path-based filtering
     mode http
     
@@ -1965,7 +1971,7 @@ frontend docker-api
     # Listens on all interfaces on port 2375 (default Docker TCP port)
     bind *:2375
     
-    # 1. ACLs: Identify safe vs sensitive Docker API endpoints
+    # 1. Access Control Lists (ACLs): Identify safe vs sensitive Docker API endpoints
     # Use regex to allow versioned paths (e.g., /v1.18.1/containers) while strictly limiting the endpoints
     acl allowed_paths path_reg ^/(v[0-9.]+/)?(events|_ping|version|info|containers|images|networks|volumes|exec|auth|secrets)
     acl forbidden_paths path_reg ^/(v[0-9.]+/)?(build|swarm|system|nodes|services|tasks|plugins|distribution|commit|configs)
@@ -1991,10 +1997,10 @@ backend docker-socket
     server docker /var/run/docker.sock
 ```
 
-Next, let's update Arcane's `entrypoint.sh` script to route its Docker API calls through our new proxy. Insert the following conditional block right after loading the secrets, and just before the exec command:
+Next, let's update Arcane's `entrypoint.sh` script to route its Docker API calls through our new proxy instead of the default local socket. By setting the `DOCKER_HOST` environment variable, we instruct the Docker client inside Arcane to communicate strictly over TCP with HAProxy. Insert the following conditional block right after loading the secrets, and just before the exec command:
 
 ```bash
-# 2. Configures the Docker host if the HAPROXY_HOST variable is provided
+# 2. Configures the Docker client to talk to HAProxy instead of the local socket
 if [ -n "$HAPROXY_HOST" ]; then
     export DOCKER_HOST="tcp://${HAPROXY_HOST}:2375"
 fi
@@ -2002,7 +2008,10 @@ fi
 # 3. Execute the command from CMD
 ```
 
-It is now time to update the `docker-compose.yml` file:
+It is now time to update the `docker-compose.yml` file to reflect this architectural shift. We need to do three things:
+1. Create the new `haproxy` service and give it exclusive access to the host's Docker socket.
+2. Remove Arcane's direct access to the `docker.sock` volume so it can no longer bypass the proxy.
+3. Pass the `HAPROXY_HOST` environment variable to Arcane so it knows where to send its API requests.
 
 ```yaml
 # Update the 'arcane' service and add the 'haproxy' one

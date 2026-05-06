@@ -7,7 +7,7 @@ set -e
 export ENCRYPTION_KEY=$(cat /run/secrets/arc_encryption_key)
 export JWT_SECRET=$(cat /run/secrets/arc_jwt_secret)
 
-# 2. Configures the Docker host if the HAPROXY_HOST variable is provided
+# 2. Configures the Docker client to talk to HAProxy instead of the local socket
 if [ -n "$HAPROXY_HOST" ]; then
     export DOCKER_HOST="tcp://${HAPROXY_HOST}:2375"
 fi

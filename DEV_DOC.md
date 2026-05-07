@@ -1766,6 +1766,9 @@ Arcane is a modern, lightweight, and high-performance Docker management interfac
 First, we need to generate two new secrets using OpenSSL. We use long random strings because they are cryptographically secure and, unlike passwords, you will never need to type them manually:
 ```bash
 openssl rand -hex 32 > ~/inception/secrets/arc_encryption_key.txt
+```
+
+```bash
 openssl rand -hex 32 > ~/inception/secrets/arc_jwt_secret.txt
 ```
 

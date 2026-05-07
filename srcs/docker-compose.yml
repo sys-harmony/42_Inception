@@ -85,31 +85,6 @@ services:
       - inception
     logging: *default-logging
 
-  redis:
-    build:
-      context: ./requirements/bonus/redis
-    image: redis:inception-v1
-    container_name: redis
-    restart: unless-stopped
-    healthcheck:
-      # Verifies Redis availability by performing a handshake:
-      # - redis-cli ping: sends the standard PING command to the server.
-      # - -h 127.0.0.1: targets the local instance within the container.
-      # - -p 6379: explicitly enforces the connection on the default Redis port.
-      # - -a "$$(cat ...)": securely authenticates using the password from the Docker secret.
-      # - grep PONG: confirms the server specifically responded with the expected 'PONG'.
-      # - || exit 1: ensures the container is marked 'unhealthy' if the handshake fails.
-      test: ["CMD-SHELL", "redis-cli -h 127.0.0.1 -p 6379 -a \"$$(cat /run/secrets/redis_password)\" ping | grep PONG || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
-    secrets:
-      - redis_password
-    networks:
-      - inception
-    logging: *default-logging
-
   nginx:
     build:
       context: ./requirements/nginx
@@ -139,6 +114,31 @@ services:
       - inception
     ports:
       - "443:443" # Only HTTPS port is exposed to the host
+    logging: *default-logging
+
+  redis:
+    build:
+      context: ./requirements/bonus/redis
+    image: redis:inception-v1
+    container_name: redis
+    restart: unless-stopped
+    healthcheck:
+      # Verifies Redis availability by performing a handshake:
+      # - redis-cli ping: sends the standard PING command to the server.
+      # - -h 127.0.0.1: targets the local instance within the container.
+      # - -p 6379: explicitly enforces the connection on the default Redis port.
+      # - -a "$$(cat ...)": securely authenticates using the password from the Docker secret.
+      # - grep PONG: confirms the server specifically responded with the expected 'PONG'.
+      # - || exit 1: ensures the container is marked 'unhealthy' if the handshake fails.
+      test: ["CMD-SHELL", "redis-cli -h 127.0.0.1 -p 6379 -a \"$$(cat /run/secrets/redis_password)\" ping | grep PONG || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    secrets:
+      - redis_password
+    networks:
+      - inception
     logging: *default-logging
 
   ftp:

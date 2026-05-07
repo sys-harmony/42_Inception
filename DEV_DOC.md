@@ -1988,59 +1988,55 @@ touch ~/inception/srcs/requirements/bonus/haproxy/conf/haproxy.cfg
 And copy the following in it:
 ```conf
 global
-    # Sends logs to the container's standard output (visible via 'docker logs')
+    # Forward logs to stdout — readable via 'docker logs'
     log stdout format raw local0
 
 defaults
-    # Note: If we wanted to operate at Layer 4 (TCP), the code would look like this:
-    # mode tcp
-    # However, Layer 4 is not sufficient here because it only routes packets based on IPs 
-    # and ports. It cannot look inside the HTTP payload, which means we wouldn't be able
-    # to read the URL requests and filter the Docker API calls (e.g. allowing /containers 
-    # but blocking /build). We need Layer 7 inspection to enforce our path-based ACLs.
-
-    # HAProxy will operate at Layer 7 (HTTP) to allow path-based filtering
+    # HAProxy will operate at Layer 7 (HTTP) to allow path-based filtering and deep inspection.
     mode http
     
-    # Standard timeout configurations for connection, client, and server response
+    # Standard timeout configurations for connection, client, and server response.
     timeout connect 5000ms
     timeout client 50000ms
     timeout server 50000ms
     
-    # Inherit logging configuration from the global section
+    # Inherit logging configuration from the global section.
     log global
     
-    # Generates rich logs for HTTP requests, including paths, status codes, and timings
+    # Generates rich logs for HTTP requests, including paths, status codes, and timings.
     option httplog
 
 frontend docker-api
-    # Listens on all interfaces on port 2375 (default Docker TCP port)
+    # Listens on all interfaces on port 2375 (default Docker TCP port).
     bind *:2375
     
-    # 1. Access Control Lists (ACLs): Identify safe vs sensitive Docker API endpoints
-    # Use regex to allow versioned paths (e.g., /v1.18.1/containers) while strictly limiting the endpoints
-    acl allowed_paths path_reg ^/(v[0-9.]+/)?(events|_ping|version|info|containers|images|networks|volumes|exec|auth|secrets)
-    acl forbidden_paths path_reg ^/(v[0-9.]+/)?(build|swarm|system|nodes|services|tasks|plugins|distribution|commit|configs)
+    # --- ACLs: define what Arcane is allowed to reach ---
 
-    # 2. Security Rules: Immediate deny on sensitive paths, then allow specific ones
+    # Safe read-only endpoints (no writes, no registry lookups)
+    acl is_read_only path_reg ^/(v[0-9.]+/)?(version|info|_ping|events|images/json|containers/json|networks|volumes)$
     
-    # Rule A: Immediately reject any request targeting highly sensitive endpoints
+    # Container lifecycle control — no DELETE
+    acl is_container_action path_reg ^/(v[0-9.]+/)?containers/[a-zA-Z0-9_.:-]+/(start|stop|restart|kill|attach|wait)$
+
+    # Exec API: create and run commands inside containers
+    acl is_exec path_reg ^/(v[0-9.]+/)?(containers/[a-zA-Z0-9_.:-]+/exec|exec/[a-zA-Z0-9_.:-]+/(start|json))$
+
+    # High-risk daemon-level endpoints
+    acl forbidden_paths path_reg ^/(v[0-9.]+/)?(build|swarm|system|nodes|services|tasks|plugins|configs|secrets|auth|commit)$
+
+    # --- Rules: deny > allow > deny all (zero-trust) ---
     http-request deny if forbidden_paths
-    
-    # Rule B: Accept requests that match the allowed patterns (listing containers, images, etc.)
-    http-request allow if allowed_paths
-    
-    # Rule C: Default security stance - if it's not explicitly allowed above, block it.
-    # This 'Zero Trust' approach ensures that unknown or new API features remain inaccessible.
+    http-request allow if is_read_only
+    http-request allow if is_container_action
+    http-request allow if is_exec
     http-request deny 
 
-    # Route all authorized traffic to the internal Docker socket
+    # Route all authorized and sanitized traffic to the backend.
     default_backend docker-socket
 
 backend docker-socket
-    # Forward the sanitized HTTP traffic to the host's Docker socket.
-    # The /var/run/docker.sock path is mounted as a volume in the container.
-    server docker /var/run/docker.sock
+    # 'unix@' tells HAProxy to use a Unix socket instead of TCP
+    server docker unix@/var/run/docker.sock check
 ```
 
 Next, let's update Arcane's `entrypoint.sh` script to route its Docker API calls through our new proxy instead of the default local socket. By setting the `DOCKER_HOST` environment variable, we instruct the Docker client inside Arcane to communicate strictly over TCP with HAProxy. Insert the following conditional block right after loading the secrets, and just before the exec command:

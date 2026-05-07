@@ -598,11 +598,13 @@ networks:
 # Mapped named volumes (configured as bind-mounts) to specific host paths
 volumes:
   mariadb_data:
+    driver: local
     driver_opts:
       type: none
       o: bind
       device: /home/yourlogin/data/mariadb
   wordpress_data:
+    driver: local
     driver_opts:
       type: none
       o: bind
@@ -610,6 +612,46 @@ volumes:
 ```
 
 https://docs.docker.com/compose/gettingstarted/
+
+The project subject strictly requires the use of Docker named volumes for persistent storage and explicitly forbids traditional bind mounts. Our configuration fully complies with this rule by declaring formal named volumes within the docker-compose.yml file:
+
+The forbidden classic `bind mount` would look like it:
+
+```yaml
+services:
+  mariadb:
+    volumes:
+      - /home/yourlogin/data/mariadb:/var/lib/mysql
+```
+
+The classic `named volume` is the standard best practice but it does not meet the project's constraint, which forces you to store data specifically in `/home/yourlogin/data/`:
+
+```yaml
+services:
+  mariadb:
+    volumes:
+      - mariadb_data:/var/lib/mysql
+
+volumes:
+  mariadb_data: {} # Docker manages the physical location behind the scenes
+```
+
+That's why we use a `mapped named volume`: we configure its driver with the bind option to force Docker to physically write the data to your personal folder:
+
+```yaml
+services:
+  mariadb:
+    volumes:
+      - mariadb_data:/var/lib/mysql
+
+volumes:
+  mariadb_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/yourlogin/data/mariadb
+```
 
 Now, create the `Makefile`:
 
@@ -1881,6 +1923,7 @@ secrets:
 volumes:
   # ... other volumes
   arcane_data:
+    driver: local
     driver_opts:
       type: none
       o: bind

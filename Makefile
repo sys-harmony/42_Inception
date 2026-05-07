@@ -10,33 +10,41 @@ build:
 	@mkdir -p $(DATA_PATH)/mariadb $(DATA_PATH)/wordpress $(DATA_PATH)/arcane
 	docker compose -f $(COMPOSE_FILE) build
 
-# Start containers in detached mode
+# Start the containers
 up: build
+    # -d : Detached mode. Run containers in the background and return control to the terminal.
 	docker compose -f $(COMPOSE_FILE) up -d
 
-# Stop running containers
+# Stop the containers
 down:
 	docker compose -f $(COMPOSE_FILE) down
 
 # Access the database command line
 mariadb:
+    # -i : Interactive, keep STDIN open so you can type the password
+    # -t : Allocate a pseudo-TTY (gives you a real terminal interface)
+    # -u root : Connect as root user to MariaDB
+    # -p : Prompt for the password
 	docker exec -it mariadb mariadb -u root -p
 
 # Standard cleanup: removes stopped containers and dangling resources (cache, networks)
 clean: down
+    # -f : Force. Do not prompt for confirmation
 	@docker system prune -f
 
-# Full cleanup: total wipe of the Docker environment and local data
+# Deep clean: total removal of the Docker environment
 fclean: 
-#   Removes all containers, networks, volumes, and images defined in the project
+    # -v        : Remove named volumes declared in the volumes section of the Compose file
+    # --rmi all : Remove all images built or downloaded by this compose file
 	docker compose -f $(COMPOSE_FILE) down -v --rmi all
 
-#   Deep clean: removes all unused images and entire build cache (including non-dangling)
+    # -a : All. Remove all unused images, not just dangling ones, and entire build cache
+    # -f : Force. Do not prompt for confirmation
 	@docker system prune -af
 
-#	Interactive prompt for persistent data
-#   Ensures DATA_PATH is set and is not the root directory to prevent system damage
-#   Requires sudo password to securely delete persistent data from the host
+    # Interactive prompt for persistent data
+    # Ensures DATA_PATH is set and is not the root directory to prevent system damage
+    # Requires sudo password to securely delete persistent data from the host
 	@echo "All Docker containers, networks, volumes, images and cache were deleted."
 	@read -p "Would you like to wipe the persistent data too? [y/N] " ans && if [ "$$ans" = "y" ] || [ "$$ans" = "Y" ]; then \
 		if [ -z "$(DATA_PATH)" ] || [ "$(DATA_PATH)" = "/" ]; then \

@@ -249,16 +249,19 @@ networks:
 # Mapped named volumes (configured as bind-mounts) to specific host paths
 volumes:
   mariadb_data:
+    driver: local
     driver_opts:
       type: none
       o: bind
       device: /home/gdosch/data/mariadb
   wordpress_data:
+    driver: local
     driver_opts:
       type: none
       o: bind
       device: /home/gdosch/data/wordpress
   arcane_data:
+    driver: local
     driver_opts:
       type: none
       o: bind

@@ -18,10 +18,10 @@ Before setting up the environment, ensure the following requirements are met on 
 * Privileges: The user must have `sudo` privileges (required for volume management and port binding).
 * Ports Availability: Ensure the following ports are not occupied by other services on the host:
   * `443` (NGINX/HTTPS)
-  * `8080` (Adminer)
-  * `8081` (Static Site)
-  * `3552` (Arcane)
   * `21` & `40000-40005` (FTP)
+  * `8081` (Static Site)
+  * `8080` (Adminer)
+  * `3552` (Arcane)
 * Local DNS: You must have the ability to modify the `/etc/hosts` file to map `yourlogin.42.fr` to the host's IP.
 
 ### Configuration Files and Secrets

@@ -16,4 +16,5 @@ EXPOSE 6379
 # Prepares the environment (secrets) before launching the application
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
-# Redis is started by the entrypoint with the runtime secret applied
+# Default command passed to the entrypoint
+CMD ["redis-server"]

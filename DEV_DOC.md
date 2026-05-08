@@ -785,23 +785,24 @@ And copy the following in it:
 # Stop the script immediately if any command fails
 set -e
 
-# 1. Fetch secrets from Docker secret mount points (RAM-only files)
-# This avoids passing sensitive passwords through environment variables
-MARIADB_ROOT_PASSWORD=$(cat /run/secrets/db_root_password)
-MARIADB_PASSWORD=$(cat /run/secrets/db_password)
-
-# 2. Fail-fast validation
-# Ensures all necessary credentials are present before attempting installation
-if [ -z "$MARIADB_ROOT_PASSWORD" ] || [ -z "$MARIADB_DATABASE" ] || [ -z "$MARIADB_USER" ] || [ -z "$MARIADB_PASSWORD" ]; then
-    echo "Error: Missing mandatory database environment variables or secrets." >&2
-    exit 1
-fi
-
-# 3. MariaDB Installation Logic
-# Only run initialization if the command passed is 'mariadbd'
+# Only run setup logic if the command passed is 'mariadbd'
 if [ "$1" = 'mariadbd' ]; then
     # Custom marker file check to ensure persistence (skips if already initialized)
     if [ ! -f "/var/lib/mysql/.initialized" ]; then
+        
+        # 1. Fetch secrets from Docker secret mount points (RAM-only files)
+        # This avoids passing sensitive passwords through environment variables
+        MARIADB_ROOT_PASSWORD=$(cat /run/secrets/db_root_password)
+        MARIADB_PASSWORD=$(cat /run/secrets/db_password)
+
+        # 2. Fail-fast validation
+        # Ensures all necessary credentials are present before attempting installation
+        if [ -z "$MARIADB_ROOT_PASSWORD" ] || [ -z "$MARIADB_DATABASE" ] || [ -z "$MARIADB_USER" ] || [ -z "$MARIADB_PASSWORD" ]; then
+            echo "Error: Missing mandatory database environment variables or secrets." >&2
+            exit 1
+        fi
+
+        # 3. MariaDB Installation Logic
         echo "Initializing MariaDB database..."
 
         # Ensure the mysql user owns the data directory for proper permissions
@@ -899,78 +900,82 @@ And copy the following in it:
 # Stop the script immediately if any command fails
 set -e
 
-# 1. Fetch secrets from Docker secret mount points
-# Retrieves sensitive credentials from Docker secret files
-MARIADB_PASSWORD=$(cat /run/secrets/db_password)
-WP_ADMIN_PASSWORD=$(cat /run/secrets/wp_admin_password)
-WP_USER_PASSWORD=$(cat /run/secrets/wp_user_password)
+# Only run setup logic if the command passed is 'php-fpm8.2'
+if [ "$1" = 'php-fpm8.2' ]; then
 
-# 2. Fail-fast validation
-# Ensures all necessary credentials are present before attempting installation
+    # 1. Fetch secrets from Docker secret mount points
+    # Retrieves sensitive credentials from Docker secret files
+    MARIADB_PASSWORD=$(cat /run/secrets/db_password)
+    WP_ADMIN_PASSWORD=$(cat /run/secrets/wp_admin_password)
+    WP_USER_PASSWORD=$(cat /run/secrets/wp_user_password)
 
-# Database checks
-if [ -z "$MARIADB_HOST" ] || [ -z "$MARIADB_DATABASE" ] || [ -z "$MARIADB_USER" ] || [ -z "$MARIADB_PASSWORD" ]; then
-    echo "Error: Missing database environment variables or secrets." >&2
-    exit 1
-fi
+    # 2. Fail-fast validation
+    # Ensures all necessary credentials are present before attempting installation
 
-# Admin checks
-if [ -z "$WP_ADMIN_USER" ] || [ -z "$WP_ADMIN_PASSWORD" ] || [ -z "$WP_ADMIN_EMAIL" ]; then
-    echo "Error: Missing admin environment variables or secrets." >&2
-    exit 1
-fi
+    # Database checks
+    if [ -z "$MARIADB_HOST" ] || [ -z "$MARIADB_DATABASE" ] || [ -z "$MARIADB_USER" ] || [ -z "$MARIADB_PASSWORD" ]; then
+        echo "Error: Missing database environment variables or secrets." >&2
+        exit 1
+    fi
 
-# Site and Secondary User checks
-if [ -z "$DOMAIN_NAME" ] || [ -z "$WP_TITLE" ] || [ -z "$WP_USER" ] || [ -z "$WP_USER_PASSWORD" ] || [ -z "$WP_USER_EMAIL" ]; then
-    echo "Error: Missing site or secondary user environment variables." >&2
-    exit 1
-fi
+    # Admin checks
+    if [ -z "$WP_ADMIN_USER" ] || [ -z "$WP_ADMIN_PASSWORD" ] || [ -z "$WP_ADMIN_EMAIL" ]; then
+        echo "Error: Missing admin environment variables or secrets." >&2
+        exit 1
+    fi
 
-# 3. Service Initialization & Dependencies
-# Service availability check: ensures the database is up before running WP-CLI commands
-echo "Waiting for MariaDB to be ready..."
-until mariadb -h"$MARIADB_HOST" -P 3306 -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
-    sleep 2
-done
+    # Site and Secondary User checks
+    if [ -z "$DOMAIN_NAME" ] || [ -z "$WP_TITLE" ] || [ -z "$WP_USER" ] || [ -z "$WP_USER_PASSWORD" ] || [ -z "$WP_USER_EMAIL" ]; then
+        echo "Error: Missing site or secondary user environment variables." >&2
+        exit 1
+    fi
 
-# 4. WordPress & Redis Configuration Logic
-# Skips if wp-config.php exists (persistence check for already initialized volumes)
-if [ ! -f "/var/www/html/wp-config.php" ]; then
-    echo "WordPress not found. Starting installation..."
+    # 3. Service Initialization & Dependencies
+    # Service availability check: ensures the database is up before running WP-CLI commands
+    echo "Waiting for MariaDB to be ready..."
+    until mariadb -h"$MARIADB_HOST" -P 3306 -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
+        sleep 2
+    done
 
-    # Downloads the WordPress core files
-    wp core download --allow-root
+    # 4. WordPress & Redis Configuration Logic
+    # Skips if wp-config.php exists (persistence check for already initialized volumes)
+    if [ ! -f "/var/www/html/wp-config.php" ]; then
+        echo "WordPress not found. Starting installation..."
 
-    # Generates wp-config.php with provided database credentials
-    wp config create \
-        --dbname="$MARIADB_DATABASE" \
-        --dbuser="$MARIADB_USER" \
-        --dbpass="$MARIADB_PASSWORD" \
-        --dbhost="$MARIADB_HOST:3306" \
-        --allow-root
+        # Downloads the WordPress core files
+        wp core download --allow-root
 
-    # Configures the database and creates the primary administrator account
-    wp core install \
-        --url="https://$DOMAIN_NAME" \
-        --title="$WP_TITLE" \
-        --admin_user="$WP_ADMIN_USER" \
-        --admin_password="$WP_ADMIN_PASSWORD" \
-        --admin_email="$WP_ADMIN_EMAIL" \
-        --skip-email \
-        --allow-root
+        # Generates wp-config.php with provided database credentials
+        wp config create \
+            --dbname="$MARIADB_DATABASE" \
+            --dbuser="$MARIADB_USER" \
+            --dbpass="$MARIADB_PASSWORD" \
+            --dbhost="$MARIADB_HOST:3306" \
+            --allow-root
 
-    # Creates the mandatory non-administrator user required by the subject
-    wp user create "$WP_USER" "$WP_USER_EMAIL" \
-        --role=author \
-        --user_pass="$WP_USER_PASSWORD" \
-        --allow-root
+        # Configures the database and creates the primary administrator account
+        wp core install \
+            --url="https://$DOMAIN_NAME" \
+            --title="$WP_TITLE" \
+            --admin_user="$WP_ADMIN_USER" \
+            --admin_password="$WP_ADMIN_PASSWORD" \
+            --admin_email="$WP_ADMIN_EMAIL" \
+            --skip-email \
+            --allow-root
 
-    # Note: If implementing the Redis bonus, inject the configuration logic here.
+        # Creates the mandatory non-administrator user required by the subject
+        wp user create "$WP_USER" "$WP_USER_EMAIL" \
+            --role=author \
+            --user_pass="$WP_USER_PASSWORD" \
+            --allow-root
 
-    # Finalizes file permissions for the web server (www-data)
-    chown -R www-data:www-data /var/www/html
-    chmod -R 755 /var/www/html
-    echo "WordPress installed successfully."
+        # Note: If implementing the Redis bonus, inject the configuration logic here.
+
+        # Finalizes file permissions for the web server (www-data)
+        chown -R www-data:www-data /var/www/html
+        chmod -R 755 /var/www/html
+        echo "WordPress installed successfully."
+    fi
 fi
 
 # 5. Execute the command from CMD
@@ -1032,34 +1037,37 @@ And copy the following in it:
 # Stop the script immediately if any command fails
 set -e
 
-# 1. Fail-fast validation
-# Ensures DOMAIN_NAME is set before generating certificates
-if [ -z "$DOMAIN_NAME" ]; then
-    echo "[ERROR] DOMAIN_NAME environment variable is missing." >&2
-    exit 1
-fi
+# Only run setup logic if the command passed is 'nginx'
+if [ "$1" = "nginx" ]; then
+    # 1. Fail-fast validation
+    # Ensures DOMAIN_NAME is set before generating certificates
+    if [ -z "$DOMAIN_NAME" ]; then
+        echo "[ERROR] DOMAIN_NAME environment variable is missing." >&2
+        exit 1
+    fi
 
-# 2. Dynamic Configuration Injection
-# Replaces the placeholder in the template with the actual domain name at runtime
-echo "[INFO] Configuring NGINX for domain: $DOMAIN_NAME"
-sed -i "s/__DOMAIN_NAME__/$DOMAIN_NAME/g" /etc/nginx/nginx.conf
+    # 2. Dynamic Configuration Injection
+    # Replaces the placeholder in the template with the actual domain name at runtime
+    echo "[INFO] Configuring NGINX for domain: $DOMAIN_NAME"
+    sed -i "s/__DOMAIN_NAME__/$DOMAIN_NAME/g" /etc/nginx/nginx.conf
 
-# 3. SSL Certificate Generation
-# Creates a self-signed certificate if not present (persistence check)
-CERTS_DIR="/etc/nginx/ssl"
+    # 3. SSL Certificate Generation
+    # Creates a self-signed certificate if not present (persistence check)
+    CERTS_DIR="/etc/nginx/ssl"
 
-if [ ! -f "$CERTS_DIR/$DOMAIN_NAME.crt" ]; then
-    echo "[INFO] Generating self-signed SSL certificate..."
-    
-    mkdir -p "$CERTS_DIR"
-    
-    # Generate a non-interactive RSA 2048-bit key and certificate valid for 365 days
-    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-        -keyout "$CERTS_DIR/$DOMAIN_NAME.key" \
-        -out "$CERTS_DIR/$DOMAIN_NAME.crt" \
-        -subj "/C=FR/ST=GrandEst/L=Mulhouse/O=42/OU=Inception/CN=$DOMAIN_NAME"
+    if [ ! -f "$CERTS_DIR/$DOMAIN_NAME.crt" ]; then
+        echo "[INFO] Generating self-signed SSL certificate..."
         
-    echo "[INFO] SSL certificate generated successfully."
+        mkdir -p "$CERTS_DIR"
+        
+        # Generate a non-interactive RSA 2048-bit key and certificate valid for 365 days
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+            -keyout "$CERTS_DIR/$DOMAIN_NAME.key" \
+            -out "$CERTS_DIR/$DOMAIN_NAME.crt" \
+            -subj "/C=FR/ST=GrandEst/L=Mulhouse/O=42/OU=Inception/CN=$DOMAIN_NAME"
+            
+        echo "[INFO] SSL certificate generated successfully."
+    fi
 fi
 
 # 4. Execute the command from CMD
@@ -1218,7 +1226,9 @@ EXPOSE 6379
 # Prepares the environment (secrets) before launching the application
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
-# Redis is started by the entrypoint with the runtime secret applied
+# Default command passed to the entrypoint
+CMD ["redis-server"]
+
 ```
 
 Now it's time to create the `entrypoint.sh` file for Redis:
@@ -1234,22 +1244,27 @@ Copy and paste the following configuration in it:
 # Stop the script immediately if any command fails
 set -e
 
-# 1. Fetch the secret from Docker secret mount point
-# Retrieves the password from the Docker secret file
-REDIS_PASSWORD=$(cat /run/secrets/redis_password)
+if [ "$1" = "redis-server" ]; then
+    # 1. Fetch the secret from Docker secret mount point
+    # Retrieves the password from the Docker secret file
+    REDIS_PASSWORD=$(cat /run/secrets/redis_password)
 
-# 2. Fail-fast validation
-if [ -z "$REDIS_PASSWORD" ]; then
-    echo "Error: REDIS_PASSWORD secret is missing." >&2
-    exit 1
+    # 2. Fail-fast validation
+    if [ -z "$REDIS_PASSWORD" ]; then
+        echo "Error: REDIS_PASSWORD secret is missing." >&2
+        exit 1
+    fi
+
+    echo "Starting Redis server..."
+
+    # Append arguments to $@
+    set -- "$@" --bind 0.0.0.0 --requirepass "$REDIS_PASSWORD" --protected-mode no
 fi
 
-echo "Starting Redis server..."
-
-# 3. Start Redis with the secret fetched above
-# 'exec' replaces the shell with the Redis process so it becomes PID 1.
+# 3. Execute the command from CMD
+# 'exec' replaces the shell with the target process so it becomes PID 1.
 # This ensures it receives SIGTERM signals directly for a clean shutdown.
-exec redis-server --bind 0.0.0.0 --requirepass "$REDIS_PASSWORD" --protected-mode no
+exec "$@"
 ```
 
 To ensure a deterministic startup and service health monitoring, we update the `docker-compose.yml` as follows:
@@ -1433,34 +1448,39 @@ Copy and paste the following configuration:
 # Stop the script immediately if any command fails
 set -e
 
-# 1. Fetch secrets from Docker secret mount points
-FTP_PASSWORD=$(cat /run/secrets/ftp_password)
+# Only run setup logic if the command passed is 'vsftpd'
+if [ "$1" = "vsftpd" ]; then
+    # 1. Fetch secrets from Docker secret mount points (RAM-only files)
+    # This avoids passing sensitive passwords through environment variables
+    FTP_PASSWORD=$(cat /run/secrets/ftp_password)
 
-# 2. Fail-fast validation
-if [ -z "$FTP_USER" ] || [ -z "$FTP_PASSWORD" ]; then
-    echo "Error: FTP_USER or ftp_password secret is missing." >&2
-    exit 1
+    # 2. Fail-fast validation
+    # Ensures all necessary credentials are present before attempting installation
+    if [ -z "$FTP_USER" ] || [ -z "$FTP_PASSWORD" ]; then
+        echo "Error: FTP_USER or ftp_password secret is missing." >&2
+        exit 1
+    fi
+
+    # 3. User Creation and Permissions
+    # Create the FTP user if it doesn't exist and set their password
+    if ! id "$FTP_USER" >/dev/null 2>&1; then
+        useradd -m -d /var/www/html -s /bin/bash "$FTP_USER"
+        echo "$FTP_USER:$FTP_PASSWORD" | chpasswd
+    else
+        usermod -d /var/www/html "$FTP_USER"
+    fi
+
+    # Ensure the webroot is owned by the FTP user for upload capabilities
+    echo "Setting permissions for /var/www/html..."
+    chown -R "$FTP_USER:$FTP_USER" /var/www/html
+    chmod -R 755 /var/www/html
+
+    # 4. Prepare the runtime environment
+    # vsftpd requires this specific directory to run for isolation (chroot)
+    mkdir -p /var/run/vsftpd/empty
+
+    echo "Starting FTP server for user: $FTP_USER"
 fi
-
-# 3. User Creation and Permissions
-# Create the FTP user if it doesn't exist and set their password
-if ! id "$FTP_USER" >/dev/null 2>&1; then
-    useradd -m -d /var/www/html -s /bin/bash "$FTP_USER"
-    echo "$FTP_USER:$FTP_PASSWORD" | chpasswd
-else
-    usermod -d /var/www/html "$FTP_USER"
-fi
-
-# Ensure the webroot is owned by the FTP user for upload capabilities
-echo "Setting permissions for /var/www/html..."
-chown -R "$FTP_USER:$FTP_USER" /var/www/html
-chmod -R 755 /var/www/html
-
-# 4. Prepare the runtime environment
-# vsftpd requires this specific directory to run for isolation (chroot)
-mkdir -p /var/run/vsftpd/empty
-
-echo "Starting FTP server for user: $FTP_USER"
 
 # 5. Execute the command from CMD
 # 'exec' replaces the shell with the vsftpd process so it becomes PID 1.
@@ -1877,11 +1897,20 @@ Copy and paste the following code in it:
 # Stops the script immediately if any command fails
 set -e
 
-# 1. Loads secrets into environment variables
-export ENCRYPTION_KEY=$(cat /run/secrets/arc_encryption_key)
-export JWT_SECRET=$(cat /run/secrets/arc_jwt_secret)
+# Only run setup logic if the command passed is './arcane'
+if [ "$1" = "./arcane" ]; then
 
-# 2. Execute the command from CMD
+    # 1. Loads secrets into environment variables
+    export ENCRYPTION_KEY=$(cat /run/secrets/arc_encryption_key)
+    export JWT_SECRET=$(cat /run/secrets/arc_jwt_secret)
+
+    # 2. Configures the Docker client to talk to HAProxy instead of the local socket
+    if [ -n "$HAPROXY_HOST" ]; then
+        export DOCKER_HOST="tcp://${HAPROXY_HOST}:2375"
+    fi
+fi
+
+# 3. Execute the command from CMD
 # 'exec' replaces the shell with the Arcane process so it becomes PID 1.
 # This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec "$@"

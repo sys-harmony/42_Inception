@@ -3,23 +3,24 @@
 # Stop the script immediately if any command fails
 set -e
 
-# 1. Fetch secrets from Docker secret mount points (RAM-only files)
-# This avoids passing sensitive passwords through environment variables
-MARIADB_ROOT_PASSWORD=$(cat /run/secrets/db_root_password)
-MARIADB_PASSWORD=$(cat /run/secrets/db_password)
-
-# 2. Fail-fast validation
-# Ensures all necessary credentials are present before attempting installation
-if [ -z "$MARIADB_ROOT_PASSWORD" ] || [ -z "$MARIADB_DATABASE" ] || [ -z "$MARIADB_USER" ] || [ -z "$MARIADB_PASSWORD" ]; then
-    echo "Error: Missing mandatory database environment variables or secrets." >&2
-    exit 1
-fi
-
-# 3. MariaDB Installation Logic
-# Only run initialization if the command passed is 'mariadbd'
+# Only run setup logic if the command passed is 'mariadbd'
 if [ "$1" = 'mariadbd' ]; then
     # Custom marker file check to ensure persistence (skips if already initialized)
     if [ ! -f "/var/lib/mysql/.initialized" ]; then
+        
+        # 1. Fetch secrets from Docker secret mount points (RAM-only files)
+        # This avoids passing sensitive passwords through environment variables
+        MARIADB_ROOT_PASSWORD=$(cat /run/secrets/db_root_password)
+        MARIADB_PASSWORD=$(cat /run/secrets/db_password)
+
+        # 2. Fail-fast validation
+        # Ensures all necessary credentials are present before attempting installation
+        if [ -z "$MARIADB_ROOT_PASSWORD" ] || [ -z "$MARIADB_DATABASE" ] || [ -z "$MARIADB_USER" ] || [ -z "$MARIADB_PASSWORD" ]; then
+            echo "Error: Missing mandatory database environment variables or secrets." >&2
+            exit 1
+        fi
+
+        # 3. MariaDB Installation Logic
         echo "Initializing MariaDB database..."
 
         # Ensure the mysql user owns the data directory for proper permissions

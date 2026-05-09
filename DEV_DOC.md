@@ -1322,7 +1322,7 @@ if [ "$1" = "redis-server" ]; then
     REDIS_PASSWORD=$(cat /run/secrets/redis_password)
 
     # 2. Fail-fast validation
-    if [ -z "$REDIS_PASSWORD" ] || [ -z "$REDIS_PORT" ]; then # <--- AJOUTER LA VÉRIFICATION DU PORT
+    if [ -z "$REDIS_PASSWORD" ] || [ -z "$REDIS_PORT" ]; then
         echo "Error: REDIS_PASSWORD secret or REDIS_PORT variable is missing." >&2
         exit 1
     fi

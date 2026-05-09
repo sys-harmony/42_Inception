@@ -1322,8 +1322,8 @@ if [ "$1" = "redis-server" ]; then
     REDIS_PASSWORD=$(cat /run/secrets/redis_password)
 
     # 2. Fail-fast validation
-    if [ -z "$REDIS_PASSWORD" ]; then
-        echo "Error: REDIS_PASSWORD secret is missing." >&2
+    if [ -z "$REDIS_PASSWORD" ] || [ -z "$REDIS_PORT" ]; then # <--- AJOUTER LA VÉRIFICATION DU PORT
+        echo "Error: REDIS_PASSWORD secret or REDIS_PORT variable is missing." >&2
         exit 1
     fi
 
@@ -1358,7 +1358,6 @@ services:
         condition: service_healthy
     # ... other configs
     environment:
-      # Explicit mapping: only injects required variables instead of using 'env_file: .env'
       # ... other variables
       - REDIS_PORT=${REDIS_PORT}
     secrets:
@@ -1411,11 +1410,14 @@ The WordPress `entrypoint.sh` file also needs editing. Replace the end of the fi
         # Fetch the redis password from secret to use it in wp-config
         REDIS_PWD=$(cat /run/secrets/redis_password)
 
+        # Fallback to default port 6379 if REDIS_PORT is empty to avoid WP-CLI errors
+        ACTUAL_REDIS_PORT=${REDIS_PORT:-6379}
+
         wp plugin install redis-cache --activate --allow-root
 
         # Injects Redis connection constants into wp-config.php
         wp config set WP_REDIS_HOST redis --allow-root
-        wp config set WP_REDIS_PORT "$REDIS_PORT" --raw --allow-root
+        wp config set WP_REDIS_PORT "$ACTUAL_REDIS_PORT" --raw --allow-root
         wp config set WP_REDIS_PASSWORD "$REDIS_PWD" --allow-root
 
         # Enables the object cache to start using Redis
@@ -1423,7 +1425,7 @@ The WordPress `entrypoint.sh` file also needs editing. Replace the end of the fi
 
         # Finalizes file permissions for the web server (www-data)
         chown -R www-data:www-data /var/www/html
-        chmod -R 755 /var/www/html
+        chmod -R 775 /var/www/html
         echo "WordPress installed successfully."
 
     else

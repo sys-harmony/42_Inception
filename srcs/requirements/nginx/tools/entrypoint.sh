@@ -5,6 +5,7 @@ set -e
 
 # Only run setup logic if the command passed is 'nginx'
 if [ "$1" = "nginx" ]; then
+
     # 1. Fail-fast validation
     # Ensures DOMAIN_NAME is set before generating certificates
     if [ -z "$DOMAIN_NAME" ]; then
@@ -13,9 +14,11 @@ if [ "$1" = "nginx" ]; then
     fi
 
     # 2. Dynamic Configuration Injection
-    # Replaces the placeholder in the template with the actual domain name at runtime
+    # Replaces the placeholders in the template with the actual domain name and ports at runtime
     echo "[INFO] Configuring NGINX for domain: $DOMAIN_NAME"
     sed -i "s/__DOMAIN_NAME__/$DOMAIN_NAME/g" /etc/nginx/nginx.conf
+    sed -i "s/__NGINX_CONTAINER_PORT__/$NGINX_CONTAINER_PORT/g" /etc/nginx/nginx.conf
+    sed -i "s/__WP_PORT__/$WP_PORT/g" /etc/nginx/nginx.conf
 
     # 3. SSL Certificate Generation
     # Creates a self-signed certificate if not present (persistence check)

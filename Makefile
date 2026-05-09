@@ -19,6 +19,9 @@ up: build
 down:
 	docker compose -f $(COMPOSE_FILE) down
 
+# Restart the containers (useful to apply new .env configurations)
+restart: down up
+
 # Access the database command line
 mariadb:
     # -i : Interactive, keep STDIN open so you can type the password

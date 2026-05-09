@@ -18,14 +18,15 @@ RUN mkdir -p /var/lib/mysql /run/mysqld && \
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose the default MariaDB port
+# Expose the default MariaDB port (Documentation purpose only)
+# The actual listening port is dynamically injected at runtime via the docker-compose.yml file
 EXPOSE 3306
 
 # Define the script that will handle the initial setup
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Default command executed by the entrypoint script (PID 1)
+# Ooverridden by docker-compose.yml at runtime to inject dynamic ports.
 # We must specify --user=mysql to avoid the "run as root" error
 # --bind-address=0.0.0.0 allows connections from other containers
-# --port=3306 specifies the port to listen on, 3306 being the default one
-CMD ["mariadbd", "--user=mysql", "--bind-address=0.0.0.0", "--port=3306"]
+CMD ["mariadbd", "--user=mysql", "--bind-address=0.0.0.0"]

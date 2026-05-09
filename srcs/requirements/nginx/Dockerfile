@@ -16,7 +16,8 @@ COPY conf/nginx.conf /etc/nginx/nginx.conf
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose port 443 for HTTPS traffic
+# Expose the default NGINX port (Documentation purpose only)
+# The actual listening port is dynamically injected at runtime via the entrypoint.sh script
 EXPOSE 443
 
 # Define the script that will handle the initial setup

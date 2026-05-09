@@ -5,15 +5,31 @@ set -e
 
 # Only run setup logic if the command passed is 'php-fpm8.2'
 if [ "$1" = 'php-fpm8.2' ]; then
-    # Skips the entire setup if wp-config.php exists (persistence check)
+
+    # 1. Update PHP-FPM listening port dynamically before starting
+    # The regex '^listen = .*' ensures it works even if the container restarts
+    sed -i "s/^listen = .*/listen = ${WP_PORT}/" /etc/php/8.2/fpm/pool.d/www.conf
+
+    # 2. Dynamic Site URL Calculation
+    # Computes the absolute WordPress URL, appending the external NGINX port
+    # if it differs from the standard 443. This prevents redirection loops.
+    if [ "$NGINX_HOST_PORT" = "443" ]; then
+        SITE_URL="https://$DOMAIN_NAME"
+    else
+        SITE_URL="https://$DOMAIN_NAME:$NGINX_HOST_PORT"
+    fi
+
+    # 3. Persistence Check
+    # Skips the entire installation setup if 'wp-config.php' already exists on the volume
     if [ ! -f "/var/www/html/wp-config.php" ]; then
-        # 1. Fetch secrets from Docker secret mount points
+
+        # 4. Fetch secrets from Docker secret mount points
         # Retrieves sensitive credentials from Docker secret files
         MARIADB_PASSWORD=$(cat /run/secrets/db_password)
         WP_ADMIN_PASSWORD=$(cat /run/secrets/wp_admin_password)
         WP_USER_PASSWORD=$(cat /run/secrets/wp_user_password)
 
-        # 2. Fail-fast validation
+        # 5. Fail-fast validation
         # Ensures all necessary credentials are present before attempting installation
 
         # Database checks
@@ -34,14 +50,14 @@ if [ "$1" = 'php-fpm8.2' ]; then
             exit 1
         fi
 
-        # 3. Service Initialization & Dependencies
+        # 6. Service Dependencies
         # Ensures MariaDB is ready before running WP-CLI commands
         echo "Waiting for MariaDB to be ready..."
-        until mariadb -h"$MARIADB_HOST" -P 3306 -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
+        until mariadb -h"$MARIADB_HOST" -P "$MARIADB_PORT" -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
             sleep 2
         done
 
-        # 4. WordPress Configuration Logic
+        # 7. WordPress Configuration Logic
         echo "WordPress not found. Starting installation..."
 
         # Downloads the WordPress core files
@@ -52,12 +68,12 @@ if [ "$1" = 'php-fpm8.2' ]; then
             --dbname="$MARIADB_DATABASE" \
             --dbuser="$MARIADB_USER" \
             --dbpass="$MARIADB_PASSWORD" \
-            --dbhost="$MARIADB_HOST:3306" \
+            --dbhost="$MARIADB_HOST:$MARIADB_PORT" \
             --allow-root
 
         # Configures the database and creates the primary administrator account
         wp core install \
-            --url="https://$DOMAIN_NAME" \
+            --url="$SITE_URL" \
             --title="$WP_TITLE" \
             --admin_user="$WP_ADMIN_USER" \
             --admin_password="$WP_ADMIN_PASSWORD" \
@@ -71,7 +87,7 @@ if [ "$1" = 'php-fpm8.2' ]; then
             --user_pass="$WP_USER_PASSWORD" \
             --allow-root
 
-        # 5. Redis Setup (Bonus)
+        # 8. Redis Setup (Bonus)
         echo "Configuring Redis Cache with authentication..."
         
         # Fetch the redis password from secret to use it in wp-config
@@ -91,10 +107,25 @@ if [ "$1" = 'php-fpm8.2' ]; then
         chown -R www-data:www-data /var/www/html
         chmod -R 755 /var/www/html
         echo "WordPress installed successfully."
+
+    else
+
+        # 9. Dynamic Update on Restart
+        # If wp-config.php already exists (persisted volume), we update the database host
+        # to seamlessly apply any potential port changes from the .env file without reinstalling.
+        echo "WordPress is already installed. Updating Database Host in case the port changed..."
+        wp config set DB_HOST "$MARIADB_HOST:$MARIADB_PORT" --allow-root
+
+        # Ensures the WordPress database reflects the current NGINX external port.
+        # This prevents the CMS from forcibly redirecting users to an old or default port.
+        echo "Updating Site URL in case the NGINX host port changed..."
+        wp option update home "$SITE_URL" --allow-root
+        wp option update siteurl "$SITE_URL" --allow-root
+
     fi
 fi
 
-# 5. Execute the command from CMD
+# 10. Execute the command from CMD
 # 'exec' replaces the shell with the PHP-FPM process so it becomes PID 1.
 # This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec "$@"

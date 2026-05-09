@@ -4,6 +4,7 @@
 set -e
 
 if [ "$1" = "redis-server" ]; then
+
     # 1. Fetch the secret from Docker secret mount point
     # Retrieves the password from the Docker secret file
     REDIS_PASSWORD=$(cat /run/secrets/redis_password)

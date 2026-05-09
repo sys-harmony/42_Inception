@@ -5,6 +5,7 @@ set -e
 
 # Only run setup logic if the command passed is 'vsftpd'
 if [ "$1" = "vsftpd" ]; then
+
     # 1. Fetch secrets from Docker secret mount points (RAM-only files)
     # This avoids passing sensitive passwords through environment variables
     FTP_PASSWORD=$(cat /run/secrets/ftp_password)

@@ -430,16 +430,22 @@ cat << 'EOF' > ~/inception/srcs/.env
 DOMAIN_NAME=yourlogin.42.fr
 
 # MARIADB SETUP
-MARIADB_USER=yourlogin
-MARIADB_DATABASE=wordpress
 MARIADB_HOST=mariadb
+MARIADB_PORT=3306
+MARIADB_DATABASE=wordpress
+MARIADB_USER=yourlogin
 
 # WORDPRESS SETUP
 WP_TITLE=Inception
+WP_PORT=9000
 WP_ADMIN_USER=yourlogin
 WP_ADMIN_EMAIL=yourlogin@student.42.fr
 WP_USER=visitor
 WP_USER_EMAIL=visitor@student.42.fr
+
+# NGINX SETUP
+NGINX_CONTAINER_PORT=443
+NGINX_HOST_PORT=443
 EOF
 ```
 
@@ -495,6 +501,7 @@ services:
     image: mariadb:inception-v1
     container_name: mariadb
     restart: unless-stopped
+    command: ["mariadbd", "--user=mysql", "--bind-address=0.0.0.0", "--port=${MARIADB_PORT}"]
     healthcheck:
       # Verifies DB readiness:
       # - mariadb-admin ping: sends a connection check to the server
@@ -503,16 +510,17 @@ services:
       # - -uroot: connects with root privileges for the health probe
       # - -p$$(cat ...): securely reads the root password from the Docker secret file
       # - --silent: prevents status messages from cluttering container logs
-      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -P 3306 -uroot -p$$(cat /run/secrets/db_root_password) --silent"]
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -P ${MARIADB_PORT} -uroot -p$$(cat /run/secrets/db_root_password) --silent"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
     environment:
       # Explicit mapping: only injects required variables instead of using 'env_file: .env'
+      - MARIADB_HOST=${MARIADB_HOST}
+      - MARIADB_PORT=${MARIADB_PORT}
       - MARIADB_DATABASE=${MARIADB_DATABASE}
       - MARIADB_USER=${MARIADB_USER}
-      - MARIADB_HOST=${MARIADB_HOST}
     secrets:
       - db_password
       - db_root_password
@@ -542,7 +550,20 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s # Gives wp-cli enough time to download and install everything during the first boot
-    env_file: .env
+    environment:
+      # Explicit mapping: only injects required variables instead of using 'env_file: .env'
+      - DOMAIN_NAME=${DOMAIN_NAME}
+      - MARIADB_HOST=${MARIADB_HOST}
+      - MARIADB_PORT=${MARIADB_PORT}
+      - MARIADB_DATABASE=${MARIADB_DATABASE}
+      - MARIADB_USER=${MARIADB_USER}
+      - WP_TITLE=${WP_TITLE}
+      - WP_PORT=${WP_PORT}
+      - WP_ADMIN_USER=${WP_ADMIN_USER}
+      - WP_ADMIN_EMAIL=${WP_ADMIN_EMAIL}
+      - WP_USER=${WP_USER}
+      - WP_USER_EMAIL=${WP_USER_EMAIL}
+      - NGINX_HOST_PORT=${NGINX_HOST_PORT}
     secrets:
       - db_password
       - wp_admin_password
@@ -569,19 +590,21 @@ services:
       # - --spider: runs in web-crawler mode (checks page existence without downloading).
       # - https://localhost:443: explicitly targets the encrypted connection on NGINX default HTTPS port.
       # - || exit 1: triggers an 'unhealthy' status if the request fails or times out.
-      test: ["CMD-SHELL", "wget --no-check-certificate --spider https://localhost:443 || exit 1"]
+      test: ["CMD-SHELL", "wget --no-check-certificate --spider https://localhost:${NGINX_CONTAINER_PORT} || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
     environment:
       # Explicit mapping: only injects required variables instead of using 'env_file: .env'
       - DOMAIN_NAME=${DOMAIN_NAME}
+      - WP_PORT=${WP_PORT}
+      - NGINX_CONTAINER_PORT=${NGINX_CONTAINER_PORT}
     volumes:
       - wordpress_data:/var/www/html:ro
     networks:
       - inception
     ports:
-      - "443:443" # Only HTTPS port is exposed to the host
+      - "${NGINX_HOST_PORT}:${NGINX_CONTAINER_PORT}" # Only HTTPS port is exposed to the host
     logging: *default-logging
 
 # Docker Secrets: Files are mounted as temporary files inside /run/secrets/ in containers
@@ -686,6 +709,9 @@ up: build
 down:
 	docker compose -f $(COMPOSE_FILE) down
 
+# Restart the containers (useful to apply new .env configurations)
+restart: down up
+
 # Access the database command line
 mariadb:
 	docker exec -it mariadb mariadb -u root -p
@@ -762,17 +788,18 @@ RUN mkdir -p /var/lib/mysql /run/mysqld && \
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose the default MariaDB port
+# Expose the default MariaDB port (Documentation purpose only)
+# The actual listening port is dynamically injected at runtime via the docker-compose.yml file
 EXPOSE 3306
 
 # Define the script that will handle the initial setup
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Default command executed by the entrypoint script (PID 1)
+# Ooverridden by docker-compose.yml at runtime to inject dynamic ports.
 # We must specify --user=mysql to avoid the "run as root" error
 # --bind-address=0.0.0.0 allows connections from other containers
-# --port=3306 specifies the port to listen on, 3306 being the default one
-CMD ["mariadbd", "--user=mysql", "--bind-address=0.0.0.0", "--port=3306"]
+CMD ["mariadbd", "--user=mysql", "--bind-address=0.0.0.0"]
 ```
 
 Then, create the `entrypoint.sh` script:
@@ -791,22 +818,24 @@ set -e
 
 # Only run setup logic if the command passed is 'mariadbd'
 if [ "$1" = 'mariadbd' ]; then
-    # Custom marker file check to ensure persistence (skips if already initialized)
+
+    # 1. Persistence Check
+    # Skips the entire installation setup if '.initialized' already exists on the volume
     if [ ! -f "/var/lib/mysql/.initialized" ]; then
         
-        # 1. Fetch secrets from Docker secret mount points (RAM-only files)
+        # 2. Fetch secrets from Docker secret mount points (RAM-only files)
         # This avoids passing sensitive passwords through environment variables
         MARIADB_ROOT_PASSWORD=$(cat /run/secrets/db_root_password)
         MARIADB_PASSWORD=$(cat /run/secrets/db_password)
 
-        # 2. Fail-fast validation
+        # 3. Fail-fast validation
         # Ensures all necessary credentials are present before attempting installation
         if [ -z "$MARIADB_ROOT_PASSWORD" ] || [ -z "$MARIADB_DATABASE" ] || [ -z "$MARIADB_USER" ] || [ -z "$MARIADB_PASSWORD" ]; then
             echo "Error: Missing mandatory database environment variables or secrets." >&2
             exit 1
         fi
 
-        # 3. MariaDB Installation Logic
+        # 4. MariaDB Installation Logic
         echo "Initializing MariaDB database..."
 
         # Ensure the mysql user owns the data directory for proper permissions
@@ -831,7 +860,7 @@ EOF
     fi
 fi
 
-# 4. Execute the command from CMD
+# 5. Execute the command from CMD
 # 'exec' replaces the shell with the MariaDB process so it becomes PID 1.
 # This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec "$@"
@@ -880,7 +909,8 @@ WORKDIR /var/www/html
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose the PHP-FPM port
+# Expose the default PHP-FPM port (Documentation purpose only)
+# The actual listening port is dynamically injected at runtime via the entrypoint.sh script
 EXPOSE 9000
 
 # Set the entrypoint script to handle setup at container start
@@ -906,15 +936,31 @@ set -e
 
 # Only run setup logic if the command passed is 'php-fpm8.2'
 if [ "$1" = 'php-fpm8.2' ]; then
-    # Skips the entire setup if wp-config.php exists (persistence check)
+
+    # 1. Update PHP-FPM listening port dynamically before starting
+    # The regex '^listen = .*' ensures it works even if the container restarts
+    sed -i "s/^listen = .*/listen = ${WP_PORT}/" /etc/php/8.2/fpm/pool.d/www.conf
+
+    # 2. Dynamic Site URL Calculation
+    # Computes the absolute WordPress URL, appending the external NGINX port
+    # if it differs from the standard 443. This prevents redirection loops.
+    if [ "$NGINX_HOST_PORT" = "443" ]; then
+        SITE_URL="https://$DOMAIN_NAME"
+    else
+        SITE_URL="https://$DOMAIN_NAME:$NGINX_HOST_PORT"
+    fi
+
+    # 3. Persistence Check
+    # Skips the entire installation setup if 'wp-config.php' already exists on the volume
     if [ ! -f "/var/www/html/wp-config.php" ]; then
-        # 1. Fetch secrets from Docker secret mount points
+
+        # 4. Fetch secrets from Docker secret mount points
         # Retrieves sensitive credentials from Docker secret files
         MARIADB_PASSWORD=$(cat /run/secrets/db_password)
         WP_ADMIN_PASSWORD=$(cat /run/secrets/wp_admin_password)
         WP_USER_PASSWORD=$(cat /run/secrets/wp_user_password)
 
-        # 2. Fail-fast validation
+        # 5. Fail-fast validation
         # Ensures all necessary credentials are present before attempting installation
 
         # Database checks
@@ -935,14 +981,14 @@ if [ "$1" = 'php-fpm8.2' ]; then
             exit 1
         fi
 
-        # 3. Service Initialization & Dependencies
+        # 6. Service Dependencies
         # Ensures MariaDB is ready before running WP-CLI commands
         echo "Waiting for MariaDB to be ready..."
-        until mariadb -h"$MARIADB_HOST" -P 3306 -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
+        until mariadb -h"$MARIADB_HOST" -P "$MARIADB_PORT" -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
             sleep 2
         done
 
-        # 4. WordPress Configuration Logic
+        # 7. WordPress Configuration Logic
         echo "WordPress not found. Starting installation..."
 
         # Downloads the WordPress core files
@@ -953,12 +999,12 @@ if [ "$1" = 'php-fpm8.2' ]; then
             --dbname="$MARIADB_DATABASE" \
             --dbuser="$MARIADB_USER" \
             --dbpass="$MARIADB_PASSWORD" \
-            --dbhost="$MARIADB_HOST:3306" \
+            --dbhost="$MARIADB_HOST:$MARIADB_PORT" \
             --allow-root
 
         # Configures the database and creates the primary administrator account
         wp core install \
-            --url="https://$DOMAIN_NAME" \
+            --url="$SITE_URL" \
             --title="$WP_TITLE" \
             --admin_user="$WP_ADMIN_USER" \
             --admin_password="$WP_ADMIN_PASSWORD" \
@@ -978,10 +1024,25 @@ if [ "$1" = 'php-fpm8.2' ]; then
         chown -R www-data:www-data /var/www/html
         chmod -R 755 /var/www/html
         echo "WordPress installed successfully."
+
+    else
+
+        # 8. Dynamic Update on Restart
+        # If wp-config.php already exists (persisted volume), we update the database host
+        # to seamlessly apply any potential port changes from the .env file without reinstalling.
+        echo "WordPress is already installed. Updating Database Host in case the port changed..."
+        wp config set DB_HOST "$MARIADB_HOST:$MARIADB_PORT" --allow-root
+
+        # Ensures the WordPress database reflects the current NGINX external port.
+        # This prevents the CMS from forcibly redirecting users to an old or default port.
+        echo "Updating Site URL in case the NGINX host port changed..."
+        wp option update home "$SITE_URL" --allow-root
+        wp option update siteurl "$SITE_URL" --allow-root
+
     fi
 fi
 
-# 5. Execute the command from CMD
+# 9. Execute the command from CMD
 # 'exec' replaces the shell with the PHP-FPM process so it becomes PID 1.
 # This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec "$@"
@@ -1016,7 +1077,8 @@ COPY conf/nginx.conf /etc/nginx/nginx.conf
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose port 443 for HTTPS traffic
+# Expose the default NGINX port (Documentation purpose only)
+# The actual listening port is dynamically injected at runtime via the entrypoint.sh script
 EXPOSE 443
 
 # Define the script that will handle the initial setup
@@ -1042,6 +1104,7 @@ set -e
 
 # Only run setup logic if the command passed is 'nginx'
 if [ "$1" = "nginx" ]; then
+
     # 1. Fail-fast validation
     # Ensures DOMAIN_NAME is set before generating certificates
     if [ -z "$DOMAIN_NAME" ]; then
@@ -1050,9 +1113,11 @@ if [ "$1" = "nginx" ]; then
     fi
 
     # 2. Dynamic Configuration Injection
-    # Replaces the placeholder in the template with the actual domain name at runtime
+    # Replaces the placeholders in the template with the actual domain name and ports at runtime
     echo "[INFO] Configuring NGINX for domain: $DOMAIN_NAME"
     sed -i "s/__DOMAIN_NAME__/$DOMAIN_NAME/g" /etc/nginx/nginx.conf
+    sed -i "s/__NGINX_CONTAINER_PORT__/$NGINX_CONTAINER_PORT/g" /etc/nginx/nginx.conf
+    sed -i "s/__WP_PORT__/$WP_PORT/g" /etc/nginx/nginx.conf
 
     # 3. SSL Certificate Generation
     # Creates a self-signed certificate if not present (persistence check)
@@ -1118,8 +1183,8 @@ http {
     # Main Server Block
     server {
         # Listen exclusively on port 443 (HTTPS) for both IPv4 and IPv6
-        listen 443 ssl;
-        listen [::]:443 ssl;
+        listen __NGINX_CONTAINER_PORT__ ssl;
+        listen [::]:__NGINX_CONTAINER_PORT__ ssl;
 
         # The server name (domain) will be dynamically replaced by the entrypoint script
         server_name __DOMAIN_NAME__;
@@ -1147,7 +1212,7 @@ http {
             try_files $uri =404;
             
             # Forward the request to the 'wordpress' container on port 9000
-            fastcgi_pass wordpress:9000;
+            fastcgi_pass wordpress:__WP_PORT__;
 
             # Default file to process if none is specified
             fastcgi_index index.php;
@@ -1248,6 +1313,7 @@ Copy and paste the following configuration in it:
 set -e
 
 if [ "$1" = "redis-server" ]; then
+
     # 1. Fetch the secret from Docker secret mount point
     # Retrieves the password from the Docker secret file
     REDIS_PASSWORD=$(cat /run/secrets/redis_password)
@@ -1325,10 +1391,10 @@ secrets:
     file: ../secrets/redis_password.txt
 ```
 
-The WordPress `entrypoint.sh` file also needs editing. Add the following between the secondary account creation and the ownership and permissions configuration:
+The WordPress `entrypoint.sh` file also needs editing. Replace the end of the file, following the secondary account creation, with the following code:
 
 ```bash
-        # 5. Redis Setup (Bonus)
+        # 8. Redis Setup (Bonus)
         echo "Configuring Redis Cache with authentication..."
         
         # Fetch the redis password from secret to use it in wp-config
@@ -1345,6 +1411,31 @@ The WordPress `entrypoint.sh` file also needs editing. Add the following between
         wp redis enable --allow-root
 
         # Finalizes file permissions for the web server (www-data)
+        chown -R www-data:www-data /var/www/html
+        chmod -R 755 /var/www/html
+        echo "WordPress installed successfully."
+
+    else
+
+        # 9. Dynamic Update on Restart
+        # If wp-config.php already exists (persisted volume), we update the database host
+        # to seamlessly apply any potential port changes from the .env file without reinstalling.
+        echo "WordPress is already installed. Updating Database Host in case the port changed..."
+        wp config set DB_HOST "$MARIADB_HOST:$MARIADB_PORT" --allow-root
+
+        # Ensures the WordPress database reflects the current NGINX external port.
+        # This prevents the CMS from forcibly redirecting users to an old or default port.
+        echo "Updating Site URL in case the NGINX host port changed..."
+        wp option update home "$SITE_URL" --allow-root
+        wp option update siteurl "$SITE_URL" --allow-root
+
+    fi
+fi
+
+# 10. Execute the command from CMD
+# 'exec' replaces the shell with the PHP-FPM process so it becomes PID 1.
+# This ensures it receives SIGTERM signals directly for a clean shutdown.
+exec "$@"
 ```
 
 Rebuild your infrastructure using `make re` to apply the changes. Verify that everything is working as expected by opening your browser and go to:
@@ -1453,6 +1544,7 @@ set -e
 
 # Only run setup logic if the command passed is 'vsftpd'
 if [ "$1" = "vsftpd" ]; then
+
     # 1. Fetch secrets from Docker secret mount points (RAM-only files)
     # This avoids passing sensitive passwords through environment variables
     FTP_PASSWORD=$(cat /run/secrets/ftp_password)
@@ -1496,24 +1588,7 @@ Passive mode is essential here, as Docker uses NAT networking. Without it, the F
 It is now time to update the `docker-compose.yml` file:
 
 ```yaml
-# 1. Update the 'wordpress' service to prevent access
-# to the unrelated 'FTP_USER' environment variable.
-  wordpress:
-    # ... keep existing config
-    # Replace 'env_file: .env' with explicit mapping:
-    environment:
-      # Explicit mapping: only injects required variables instead of using 'env_file: .env'
-      - MARIADB_HOST=${MARIADB_HOST}
-      - MARIADB_DATABASE=${MARIADB_DATABASE}
-      - MARIADB_USER=${MARIADB_USER}
-      - WP_ADMIN_USER=${WP_ADMIN_USER}
-      - WP_ADMIN_EMAIL=${WP_ADMIN_EMAIL}
-      - DOMAIN_NAME=${DOMAIN_NAME}
-      - WP_TITLE=${WP_TITLE}
-      - WP_USER=${WP_USER}
-      - WP_USER_EMAIL=${WP_USER_EMAIL}
-
-# 2. Add the 'ftp' service
+# 1. Add the 'ftp' service
 services:
   # ... other services
   ftp:
@@ -1536,7 +1611,7 @@ services:
       - "40000-40005:40000-40005" # Passive mode port range
     logging: *default-logging
 
-# 3. Add this to the main 'secrets' section at the bottom
+# 2. Add this to the main 'secrets' section at the bottom
 secrets:
   # ... other secrets
   ftp_password:

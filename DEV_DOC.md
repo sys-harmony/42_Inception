@@ -444,7 +444,7 @@ WP_USER=visitor
 WP_USER_EMAIL=visitor@student.42.fr
 
 # NGINX SETUP
-NGINX_CONTAINER_PORT=443
+NGINX_PORT=443
 NGINX_HOST_PORT=443
 EOF
 ```
@@ -590,7 +590,7 @@ services:
       # - --spider: runs in web-crawler mode (checks page existence without downloading).
       # - https://localhost:443: explicitly targets the encrypted connection on NGINX default HTTPS port.
       # - || exit 1: triggers an 'unhealthy' status if the request fails or times out.
-      test: ["CMD-SHELL", "wget --no-check-certificate --spider https://localhost:${NGINX_CONTAINER_PORT} || exit 1"]
+      test: ["CMD-SHELL", "wget --no-check-certificate --spider https://localhost:${NGINX_PORT} || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -598,13 +598,13 @@ services:
       # Explicit mapping: only injects required variables instead of using 'env_file: .env'
       - DOMAIN_NAME=${DOMAIN_NAME}
       - WP_PORT=${WP_PORT}
-      - NGINX_CONTAINER_PORT=${NGINX_CONTAINER_PORT}
+      - NGINX_PORT=${NGINX_PORT}
     volumes:
       - wordpress_data:/var/www/html:ro
     networks:
       - inception
     ports:
-      - "${NGINX_HOST_PORT}:${NGINX_CONTAINER_PORT}" # Only HTTPS port is exposed to the host
+      - "${NGINX_HOST_PORT}:${NGINX_PORT}" # Only HTTPS port is exposed to the host
     logging: *default-logging
 
 # Docker Secrets: Files are mounted as temporary files inside /run/secrets/ in containers
@@ -1116,7 +1116,7 @@ if [ "$1" = "nginx" ]; then
     # Replaces the placeholders in the template with the actual domain name and ports at runtime
     echo "[INFO] Configuring NGINX for domain: $DOMAIN_NAME"
     sed -i "s/__DOMAIN_NAME__/$DOMAIN_NAME/g" /etc/nginx/nginx.conf
-    sed -i "s/__NGINX_CONTAINER_PORT__/$NGINX_CONTAINER_PORT/g" /etc/nginx/nginx.conf
+    sed -i "s/__NGINX_PORT__/$NGINX_PORT/g" /etc/nginx/nginx.conf
     sed -i "s/__WP_PORT__/$WP_PORT/g" /etc/nginx/nginx.conf
 
     # 3. SSL Certificate Generation
@@ -1183,8 +1183,8 @@ http {
     # Main Server Block
     server {
         # Listen exclusively on port 443 (HTTPS) for both IPv4 and IPv6
-        listen __NGINX_CONTAINER_PORT__ ssl;
-        listen [::]:__NGINX_CONTAINER_PORT__ ssl;
+        listen __NGINX_PORT__ ssl;
+        listen [::]:__NGINX_PORT__ ssl;
 
         # The server name (domain) will be dynamically replaced by the entrypoint script
         server_name __DOMAIN_NAME__;

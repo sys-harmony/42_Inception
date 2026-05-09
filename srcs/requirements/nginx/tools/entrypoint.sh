@@ -17,7 +17,7 @@ if [ "$1" = "nginx" ]; then
     # Replaces the placeholders in the template with the actual domain name and ports at runtime
     echo "[INFO] Configuring NGINX for domain: $DOMAIN_NAME"
     sed -i "s/__DOMAIN_NAME__/$DOMAIN_NAME/g" /etc/nginx/nginx.conf
-    sed -i "s/__NGINX_CONTAINER_PORT__/$NGINX_CONTAINER_PORT/g" /etc/nginx/nginx.conf
+    sed -i "s/__NGINX_PORT__/$NGINX_PORT/g" /etc/nginx/nginx.conf
     sed -i "s/__WP_PORT__/$WP_PORT/g" /etc/nginx/nginx.conf
 
     # 3. SSL Certificate Generation

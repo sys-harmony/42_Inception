@@ -106,7 +106,7 @@ services:
       # - --spider: runs in web-crawler mode (checks page existence without downloading).
       # - https://localhost:443: explicitly targets the encrypted connection on NGINX default HTTPS port.
       # - || exit 1: triggers an 'unhealthy' status if the request fails or times out.
-      test: ["CMD-SHELL", "wget --no-check-certificate --spider https://localhost:${NGINX_CONTAINER_PORT} || exit 1"]
+      test: ["CMD-SHELL", "wget --no-check-certificate --spider https://localhost:${NGINX_PORT} || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -114,13 +114,13 @@ services:
       # Explicit mapping: only injects required variables instead of using 'env_file: .env'
       - DOMAIN_NAME=${DOMAIN_NAME}
       - WP_PORT=${WP_PORT}
-      - NGINX_CONTAINER_PORT=${NGINX_CONTAINER_PORT}
+      - NGINX_PORT=${NGINX_PORT}
     volumes:
       - wordpress_data:/var/www/html:ro
     networks:
       - inception
     ports:
-      - "${NGINX_HOST_PORT}:${NGINX_CONTAINER_PORT}" # Only HTTPS port is exposed to the host
+      - "${NGINX_HOST_PORT}:${NGINX_PORT}" # Only HTTPS port is exposed to the host
     logging: *default-logging
 
   redis:

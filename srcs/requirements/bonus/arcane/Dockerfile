@@ -1,6 +1,9 @@
 # Use Debian Bookworm as the base image
 FROM debian:12
 
+# Define the version argument (passed from docker-compose.yml)
+ARG ARCANE_VERSION
+
 # Update system and install required base utilities
 RUN apt-get update && apt-get install -y \
     curl \
@@ -10,8 +13,8 @@ RUN apt-get update && apt-get install -y \
 # Set working directory for the application
 WORKDIR /app
 
-# Download the pre-compiled Linux AMD64 binary directly using curl
-RUN curl -fsSL https://github.com/getarcaneapp/arcane/releases/download/v1.18.1/arcane_linux_amd64 -o arcane \
+# Download the pre-compiled Linux AMD64 binary for the specific version
+RUN curl -fsSL https://github.com/getarcaneapp/arcane/releases/download/v${ARCANE_VERSION}/arcane_linux_amd64 -o arcane \
     && chmod +x arcane
 
 # Copy the entrypoint script into the container and make it executable

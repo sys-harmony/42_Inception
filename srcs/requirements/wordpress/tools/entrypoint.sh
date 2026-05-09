@@ -60,8 +60,15 @@ if [ "$1" = 'php-fpm8.2' ]; then
         # 7. WordPress Configuration Logic
         echo "WordPress not found. Starting installation..."
 
-        # Downloads the WordPress core files
-        wp core download --allow-root
+        # Downloads the specific version of WordPress core files
+        # If WP_VERSION is not defined, it will fallback to the latest version
+        if [ -n "$WP_VERSION" ]; then
+            echo "Downloading WordPress version $WP_VERSION..."
+            wp core download --version="$WP_VERSION" --allow-root
+        else
+            echo "Downloading the latest WordPress version..."
+            wp core download --allow-root
+        fi
 
         # Generates wp-config.php with provided database credentials
         wp config create \

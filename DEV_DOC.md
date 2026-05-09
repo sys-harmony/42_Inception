@@ -436,6 +436,7 @@ MARIADB_DATABASE=wordpress
 MARIADB_USER=yourlogin
 
 # WORDPRESS SETUP
+WP_VERSION=6.9.4
 WP_TITLE=Inception
 WP_PORT=9000
 WP_ADMIN_USER=yourlogin
@@ -558,6 +559,7 @@ services:
       - MARIADB_PORT=${MARIADB_PORT}
       - MARIADB_DATABASE=${MARIADB_DATABASE}
       - MARIADB_USER=${MARIADB_USER}
+      - WP_VERSION=${WP_VERSION}
       - WP_TITLE=${WP_TITLE}
       - WP_PORT=${WP_PORT}
       - WP_ADMIN_USER=${WP_ADMIN_USER}
@@ -994,8 +996,15 @@ if [ "$1" = 'php-fpm8.2' ]; then
         # 7. WordPress Configuration Logic
         echo "WordPress not found. Starting installation..."
 
-        # Downloads the WordPress core files
-        wp core download --allow-root
+        # Downloads the specific version of WordPress core files
+        # If WP_VERSION is not defined, it will fallback to the latest version
+        if [ -n "$WP_VERSION" ]; then
+            echo "Downloading WordPress version $WP_VERSION..."
+            wp core download --version="$WP_VERSION" --allow-root
+        else
+            echo "Downloading the latest WordPress version..."
+            wp core download --allow-root
+        fi
 
         # Generates wp-config.php with provided database credentials
         wp config create \
@@ -1268,6 +1277,12 @@ Redis is an excellent performance upgrade for your WordPress site. We will now c
 echo -n "your_redis_password" > ~/inception/secrets/redis_password.txt 
 ```
 
+Add the REDIS_PORT variable to your .env file:
+```env
+# REDIS
+REDIS_PORT=6379
+```
+
 Let's create the structure:
 ```bash
 mkdir -p ~/inception/srcs/requirements/bonus/redis/tools
@@ -1484,9 +1499,12 @@ let's start by creating a secret for it:
 echo -n "your_ftp_password" > ~/inception/secrets/ftp_password.txt
 ```
 
-Add your username at the end of the `.env` file:
+Add these configuration variables to your .env file:
 ```env
-# FTP SETUP (BONUS)
+# FTP
+FTP_PORT=21
+FTP_PASV_MIN_PORT=40000
+FTP_PASV_MAX_PORT=40005
 FTP_USER=yourlogin
 ```
 
@@ -1717,6 +1735,13 @@ Source: https://security.appspot.com/vsftpd.html
 
 This bonus consists of a simple static page served by a dedicated webserver container. For this service, we have decided to use **lighttpd**, a secure, fast, and very lightweight alternative to NGINX.
 
+Add these configuration variables to your .env file:
+```env
+# STATIC (LIGHTTPD)
+STATIC_PORT=80
+STATIC_HOST_PORT=8081
+```
+
 Create the project structure:
 
 ```bash
@@ -1866,6 +1891,14 @@ Source: https://redmine.lighttpd.net/projects/lighttpd/wiki/Docs
 
 Adminer is a lightweight database management tool written in a single PHP file. It is a great alternative to phpMyAdmin.
 
+Add these configuration variables to your .env file:
+```env
+# ADMINER
+ADMINER_VERSION=5.4.2
+ADMINER_PORT=8080
+ADMINER_HOST_PORT=8080
+```
+
 Create the structure:
 
 ```bash
@@ -1884,6 +1917,9 @@ Copy and paste the following code in it:
 # Use Debian Bookworm as the base image for consistency
 FROM debian:12
 
+# Define the version argument (passed from docker-compose.yml)
+ARG ADMINER_VERSION
+
 # Install PHP, the PHP-MySQL extension and wget (to download Adminer)
 RUN apt-get update && apt-get install -y \
 	php8.2 php8.2-mysql \
@@ -1893,9 +1929,9 @@ RUN apt-get update && apt-get install -y \
 # Create the web directory
 RUN mkdir -p /var/www/html
 
-# Download Adminer directly into the web directory
+# Download the specific version of Adminer directly into the web directory
 # We rename it to index.php so the server loads it by default
-RUN wget https://github.com/vrana/adminer/releases/download/v5.4.2/adminer-5.4.2.php -O /var/www/html/index.php
+RUN wget https://github.com/vrana/adminer/releases/download/v${ADMINER_VERSION}/adminer-${ADMINER_VERSION}.php -O /var/www/html/index.php
 
 # Ensure proper permissions
 RUN chown -R www-data:www-data /var/www/html
@@ -1920,6 +1956,8 @@ services:
   adminer:
     build:
       context: ./requirements/bonus/adminer
+      args:
+        - ADMINER_VERSION=${ADMINER_VERSION}
     image: adminer:inception-v1
     container_name: adminer
     restart: unless-stopped
@@ -1969,6 +2007,14 @@ openssl rand -hex 32 > ~/inception/secrets/arc_encryption_key.txt
 openssl rand -hex 32 > ~/inception/secrets/arc_jwt_secret.txt
 ```
 
+Add these configuration variables to your .env file:
+```env
+# ARCANE
+ARCANE_VERSION=1.18.1
+ARCANE_PORT=3552
+ARCANE_HOST_PORT=3552
+```
+
 Now, create the necessary directories for this service:
 ```bash
 mkdir -p ~/inception/srcs/requirements/bonus/arcane/tools
@@ -1991,6 +2037,9 @@ Copy and paste the following code in it:
 # Use Debian Bookworm as the base image
 FROM debian:12
 
+# Define the version argument (passed from docker-compose.yml)
+ARG ARCANE_VERSION
+
 # Update system and install required base utilities
 RUN apt-get update && apt-get install -y \
     curl \
@@ -2000,8 +2049,8 @@ RUN apt-get update && apt-get install -y \
 # Set working directory for the application
 WORKDIR /app
 
-# Download the pre-compiled Linux AMD64 binary directly using curl
-RUN curl -fsSL https://github.com/getarcaneapp/arcane/releases/download/v1.18.1/arcane_linux_amd64 -o arcane \
+# Download the pre-compiled Linux AMD64 binary for the specific version
+RUN curl -fsSL https://github.com/getarcaneapp/arcane/releases/download/v${ARCANE_VERSION}/arcane_linux_amd64 -o arcane \
     && chmod +x arcane
 
 # Copy the entrypoint script into the container and make it executable
@@ -2054,6 +2103,8 @@ services:
   arcane:
     build:
       context: ./requirements/bonus/arcane
+      args:
+        - ARCANE_VERSION=${ARCANE_VERSION}
     image: arcane:inception-v1
     container_name: arcane
     restart: unless-stopped
@@ -2108,10 +2159,11 @@ Let's create the structure:
 mkdir -p ~/inception/srcs/requirements/bonus/haproxy/conf
 ```
 
-Declare the proxy's hostname by adding the following environment variable to your .env file:
+Add these configuration variables to your .env file:
 ```env
-# HAPROXY SETUP (BONUS)
+# HAPROXY
 HAPROXY_HOST=haproxy
+HAPROXY_PORT=2375
 ```
 
 Create the `Dockerfile`:

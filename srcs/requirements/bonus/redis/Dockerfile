@@ -13,8 +13,8 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # Expose the default Redis port
 EXPOSE 6379
 
-# Prepares the environment (secrets) before launching the application
+# Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
-# Default command passed to the entrypoint
+# Default command executed as PID 1 via the entrypoint's 'exec "$@"'
 CMD ["redis-server"]

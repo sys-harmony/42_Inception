@@ -15,13 +15,17 @@ if [ "$1" = "redis-server" ]; then
         exit 1
     fi
 
-    echo "Starting Redis server..."
+    echo "Starting Redis server on port $REDIS_PORT..."
 
-    # Append arguments to $@
-    set -- "$@" --bind 0.0.0.0 --requirepass "$REDIS_PASSWORD" --protected-mode no
+    # 3. Dynamic Configuration via Command Arguments
+    # Instead of modifying a config file, we inject parameters directly 
+    # into the command line arguments using 'set --'.
+    # --bind 0.0.0.0: Allows connections from other containers (WordPress)
+    # --protected-mode no: Required for remote connections when bind is used
+    set -- "$@" --port "$REDIS_PORT" --bind 0.0.0.0 --requirepass "$REDIS_PASSWORD" --protected-mode no
 fi
 
-# 3. Execute the command from CMD
+# 4. Execute the command from CMD
 # 'exec' replaces the shell with the target process so it becomes PID 1.
 # This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec "$@"

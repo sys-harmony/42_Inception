@@ -97,7 +97,7 @@ if [ "$1" = 'php-fpm8.2' ]; then
 
         # Injects Redis connection constants into wp-config.php
         wp config set WP_REDIS_HOST redis --allow-root
-        wp config set WP_REDIS_PORT 6379 --raw --allow-root
+        wp config set WP_REDIS_PORT "$REDIS_PORT" --raw --allow-root
         wp config set WP_REDIS_PASSWORD "$REDIS_PWD" --allow-root
 
         # Enables the object cache to start using Redis
@@ -121,6 +121,20 @@ if [ "$1" = 'php-fpm8.2' ]; then
         echo "Updating Site URL in case the NGINX host port changed..."
         wp option update home "$SITE_URL" --allow-root
         wp option update siteurl "$SITE_URL" --allow-root
+
+        # Update Redis configuration in case the port or password changed
+        echo "Updating Redis configuration..."
+        REDIS_PWD=$(cat /run/secrets/redis_password)
+        
+        # Fallback to default port 6379 if REDIS_PORT is empty to avoid WP-CLI errors
+        ACTUAL_REDIS_PORT=${REDIS_PORT:-6379}
+
+        wp config set WP_REDIS_HOST redis --allow-root
+        wp config set WP_REDIS_PORT "$ACTUAL_REDIS_PORT" --raw --allow-root
+        wp config set WP_REDIS_PASSWORD "$REDIS_PWD" --allow-root
+        
+        # Re-enable the object cache to ensure it's active with new settings
+        wp redis enable --allow-root
 
     fi
 fi

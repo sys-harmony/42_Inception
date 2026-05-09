@@ -20,8 +20,9 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # The actual listening port is dynamically injected at runtime via the entrypoint.sh script
 EXPOSE 443
 
-# Define the script that will handle the initial setup
+# Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
-# Run NGINX in the foreground so the container doesn't exit
+# Default command executed as PID 1 via the entrypoint's 'exec "$@"'
+# -g "daemon off;": Runs NGINX in the foreground so the container doesn't exit
 CMD ["nginx", "-g", "daemon off;"]

@@ -12,7 +12,7 @@ if [ "$1" = "./arcane" ]; then
 
     # 2. Configures the Docker client to talk to HAProxy instead of the local socket
     if [ -n "$HAPROXY_HOST" ]; then
-        export DOCKER_HOST="tcp://${HAPROXY_HOST}:2375"
+        export DOCKER_HOST="tcp://${HAPROXY_HOST}:${HAPROXY_PORT}"
     fi
 fi
 

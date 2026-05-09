@@ -18,27 +18,38 @@ if [ "$1" = "vsftpd" ]; then
     fi
 
     # 3. User Creation and Permissions
-    # Create the FTP user if it doesn't exist and set their password
+    # Create the FTP user with a specific UID to match a common standard or 
+    # simply add him to the www-data group.
     if ! id "$FTP_USER" >/dev/null 2>&1; then
-        useradd -m -d /var/www/html -s /bin/bash "$FTP_USER"
+        # We create the user and force him into the www-data group (GID 33)
+        useradd -m -d /var/www/html -s /bin/bash -G www-data "$FTP_USER"
         echo "$FTP_USER:$FTP_PASSWORD" | chpasswd
     else
-        usermod -d /var/www/html "$FTP_USER"
+        usermod -d /var/www/html -G www-data "$FTP_USER"
     fi
 
-    # Ensure the webroot is owned by the FTP user for upload capabilities
+    # We give ownership to www-data (so WordPress can write)
+    # and we set permissions to 775 (so the group www-data, including our FTP user, can write)
     echo "Setting permissions for /var/www/html..."
-    chown -R "$FTP_USER:$FTP_USER" /var/www/html
-    chmod -R 755 /var/www/html
+    chown -R www-data:www-data /var/www/html
+    chmod -R 775 /var/www/html
 
     # 4. Prepare the runtime environment
     # vsftpd requires this specific directory to run for isolation (chroot)
     mkdir -p /var/run/vsftpd/empty
 
+    # 5. Dynamic Port Configuration
+    # Injects the ports defined in the .env file into the vsftpd configuration.
+    # This ensures the server listens on the correct ports for both command and passive modes.
+    echo "Configuring dynamic ports for vsftpd..."
+    sed -i "s/^listen_port=.*/listen_port=${FTP_PORT}/" /etc/vsftpd.conf
+    sed -i "s/^pasv_min_port=.*/pasv_min_port=${FTP_PASV_MIN_PORT}/" /etc/vsftpd.conf
+    sed -i "s/^pasv_max_port=.*/pasv_max_port=${FTP_PASV_MAX_PORT}/" /etc/vsftpd.conf
+
     echo "Starting FTP server for user: $FTP_USER"
 fi
 
-# 5. Execute the command from CMD
+# 6. Execute the command from CMD
 # 'exec' replaces the shell with the vsftpd process so it becomes PID 1.
 # This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec "$@"

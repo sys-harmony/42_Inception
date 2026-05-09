@@ -501,6 +501,7 @@ services:
     image: mariadb:inception-v1
     container_name: mariadb
     restart: unless-stopped
+    # Overrides the default image command to inject the dynamic port from .env
     command: ["mariadbd", "--user=mysql", "--bind-address=0.0.0.0", "--port=${MARIADB_PORT}"]
     healthcheck:
       # Verifies DB readiness:
@@ -792,11 +793,11 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # The actual listening port is dynamically injected at runtime via the docker-compose.yml file
 EXPOSE 3306
 
-# Define the script that will handle the initial setup
+# Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
-# Default command executed by the entrypoint script (PID 1)
-# Ooverridden by docker-compose.yml at runtime to inject dynamic ports.
+# Default command executed as PID 1 via the entrypoint's 'exec "$@"'
+# Overridden by docker-compose.yml at runtime to inject dynamic ports.
 # We must specify --user=mysql to avoid the "run as root" error
 # --bind-address=0.0.0.0 allows connections from other containers
 CMD ["mariadbd", "--user=mysql", "--bind-address=0.0.0.0"]
@@ -913,10 +914,12 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # The actual listening port is dynamically injected at runtime via the entrypoint.sh script
 EXPOSE 9000
 
-# Set the entrypoint script to handle setup at container start
+# Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
-# Default command executed by the entrypoint script (PID 1)
+# Default command executed as PID 1 via the entrypoint's 'exec "$@"'
+# -F: Forces php-fpm to run in the foreground rather than becoming a daemon.
+# This ensures the container stays active and that logs are sent to stdout/stderr.
 CMD ["php-fpm8.2", "-F"]
 ```
 
@@ -1081,10 +1084,11 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # The actual listening port is dynamically injected at runtime via the entrypoint.sh script
 EXPOSE 443
 
-# Define the script that will handle the initial setup
+# Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
-# Run NGINX in the foreground so the container doesn't exit
+# Default command executed as PID 1 via the entrypoint's 'exec "$@"'
+# -g "daemon off;": Runs NGINX in the foreground so the container doesn't exit
 CMD ["nginx", "-g", "daemon off;"]
 ```
 
@@ -1291,12 +1295,11 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # Expose the default Redis port
 EXPOSE 6379
 
-# Prepares the environment (secrets) before launching the application
+# Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
-# Default command passed to the entrypoint
+# Default command executed as PID 1 via the entrypoint's 'exec "$@"'
 CMD ["redis-server"]
-
 ```
 
 Now it's time to create the `entrypoint.sh` file for Redis:
@@ -1324,13 +1327,17 @@ if [ "$1" = "redis-server" ]; then
         exit 1
     fi
 
-    echo "Starting Redis server..."
+    echo "Starting Redis server on port $REDIS_PORT..."
 
-    # Append arguments to $@
-    set -- "$@" --bind 0.0.0.0 --requirepass "$REDIS_PASSWORD" --protected-mode no
+    # 3. Dynamic Configuration via Command Arguments
+    # Instead of modifying a config file, we inject parameters directly 
+    # into the command line arguments using 'set --'.
+    # --bind 0.0.0.0: Allows connections from other containers (WordPress)
+    # --protected-mode no: Required for remote connections when bind is used
+    set -- "$@" --port "$REDIS_PORT" --bind 0.0.0.0 --requirepass "$REDIS_PASSWORD" --protected-mode no
 fi
 
-# 3. Execute the command from CMD
+# 4. Execute the command from CMD
 # 'exec' replaces the shell with the target process so it becomes PID 1.
 # This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec "$@"
@@ -1350,11 +1357,13 @@ services:
       redis:
         condition: service_healthy
     # ... other configs
+    environment:
+      # Explicit mapping: only injects required variables instead of using 'env_file: .env'
+      # ... other variables
+      - REDIS_PORT=${REDIS_PORT}
     secrets:
-      - db_password
+      # ... other secrets
       - redis_password
-      - wp_admin_password
-      - wp_user_password
     # ... other configs
 
   # ... other services
@@ -1373,11 +1382,13 @@ services:
       # - -a "$$(cat ...)": securely authenticates using the password from the Docker secret.
       # - grep PONG: confirms the server specifically responded with the expected 'PONG'.
       # - || exit 1: ensures the container is marked 'unhealthy' if the handshake fails.
-      test: ["CMD-SHELL", "redis-cli -h 127.0.0.1 -p 6379 -a \"$$(cat /run/secrets/redis_password)\" ping | grep PONG || exit 1"]
+      test: ["CMD-SHELL", "redis-cli -h 127.0.0.1 -p ${REDIS_PORT} -a \"$$(cat /run/secrets/redis_password)\" ping | grep PONG || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 5s
+    environment:
+      - REDIS_PORT=${REDIS_PORT}
     secrets:
       - redis_password
     networks:
@@ -1404,7 +1415,7 @@ The WordPress `entrypoint.sh` file also needs editing. Replace the end of the fi
 
         # Injects Redis connection constants into wp-config.php
         wp config set WP_REDIS_HOST redis --allow-root
-        wp config set WP_REDIS_PORT 6379 --raw --allow-root
+        wp config set WP_REDIS_PORT "$REDIS_PORT" --raw --allow-root
         wp config set WP_REDIS_PASSWORD "$REDIS_PWD" --allow-root
 
         # Enables the object cache to start using Redis
@@ -1428,6 +1439,20 @@ The WordPress `entrypoint.sh` file also needs editing. Replace the end of the fi
         echo "Updating Site URL in case the NGINX host port changed..."
         wp option update home "$SITE_URL" --allow-root
         wp option update siteurl "$SITE_URL" --allow-root
+
+        # Update Redis configuration in case the port or password changed
+        echo "Updating Redis configuration..."
+        REDIS_PWD=$(cat /run/secrets/redis_password)
+        
+        # Fallback to default port 6379 if REDIS_PORT is empty to avoid WP-CLI errors
+        ACTUAL_REDIS_PORT=${REDIS_PORT:-6379}
+
+        wp config set WP_REDIS_HOST redis --allow-root
+        wp config set WP_REDIS_PORT "$ACTUAL_REDIS_PORT" --raw --allow-root
+        wp config set WP_REDIS_PASSWORD "$REDIS_PWD" --allow-root
+        
+        # Re-enable the object cache to ensure it's active with new settings
+        wp redis enable --allow-root
 
     fi
 fi
@@ -1493,10 +1518,10 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # Expose FTP port and passive mode range
 EXPOSE 21 40000-40005
 
-# Prepares the environment (users, permissions, secrets) before launching
+# Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
-# Default binary executed as PID 1 via the entrypoint's 'exec "$@"'
+# Default command executed as PID 1 via the entrypoint's 'exec "$@"'
 CMD ["vsftpd", "/etc/vsftpd.conf"]
 ```
 
@@ -1557,27 +1582,38 @@ if [ "$1" = "vsftpd" ]; then
     fi
 
     # 3. User Creation and Permissions
-    # Create the FTP user if it doesn't exist and set their password
+    # Create the FTP user with a specific UID to match a common standard or 
+    # simply add him to the www-data group.
     if ! id "$FTP_USER" >/dev/null 2>&1; then
-        useradd -m -d /var/www/html -s /bin/bash "$FTP_USER"
+        # We create the user and force him into the www-data group (GID 33)
+        useradd -m -d /var/www/html -s /bin/bash -G www-data "$FTP_USER"
         echo "$FTP_USER:$FTP_PASSWORD" | chpasswd
     else
-        usermod -d /var/www/html "$FTP_USER"
+        usermod -d /var/www/html -G www-data "$FTP_USER"
     fi
 
-    # Ensure the webroot is owned by the FTP user for upload capabilities
+    # We give ownership to www-data (so WordPress can write)
+    # and we set permissions to 775 (so the group www-data, including our FTP user, can write)
     echo "Setting permissions for /var/www/html..."
-    chown -R "$FTP_USER:$FTP_USER" /var/www/html
-    chmod -R 755 /var/www/html
+    chown -R www-data:www-data /var/www/html
+    chmod -R 775 /var/www/html
 
     # 4. Prepare the runtime environment
     # vsftpd requires this specific directory to run for isolation (chroot)
     mkdir -p /var/run/vsftpd/empty
 
+    # 5. Dynamic Port Configuration
+    # Injects the ports defined in the .env file into the vsftpd configuration.
+    # This ensures the server listens on the correct ports for both command and passive modes.
+    echo "Configuring dynamic ports for vsftpd..."
+    sed -i "s/^listen_port=.*/listen_port=${FTP_PORT}/" /etc/vsftpd.conf
+    sed -i "s/^pasv_min_port=.*/pasv_min_port=${FTP_PASV_MIN_PORT}/" /etc/vsftpd.conf
+    sed -i "s/^pasv_max_port=.*/pasv_max_port=${FTP_PASV_MAX_PORT}/" /etc/vsftpd.conf
+
     echo "Starting FTP server for user: $FTP_USER"
 fi
 
-# 5. Execute the command from CMD
+# 6. Execute the command from CMD
 # 'exec' replaces the shell with the vsftpd process so it becomes PID 1.
 # This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec "$@"
@@ -1597,9 +1633,15 @@ services:
     image: ftp:inception-v1
     container_name: ftp
     restart: unless-stopped
+    depends_on:
+      wordpress:
+        condition: service_healthy
     environment:
       # Explicit mapping: only injects required variables instead of using 'env_file: .env'
       - FTP_USER=${FTP_USER}
+      - FTP_PORT=${FTP_PORT}
+      - FTP_PASV_MIN_PORT=${FTP_PASV_MIN_PORT}
+      - FTP_PASV_MAX_PORT=${FTP_PASV_MAX_PORT}
     secrets:
       - ftp_password
     volumes:
@@ -1607,8 +1649,8 @@ services:
     networks:
       - inception
     ports:
-      - "21:21"
-      - "40000-40005:40000-40005" # Passive mode port range
+      - "${FTP_PORT}:${FTP_PORT}"
+      - "${FTP_PASV_MIN_PORT}-${FTP_PASV_MAX_PORT}:${FTP_PASV_MIN_PORT}-${FTP_PASV_MAX_PORT}" # Passive mode port range
     logging: *default-logging
 
 # 2. Add this to the main 'secrets' section at the bottom
@@ -1705,10 +1747,17 @@ COPY www /var/www/html
 # Ensure the web server user (www-data) owns the files for proper access
 RUN chown -R www-data:www-data /var/www/html
 
+# Copy the initialization script to the container
+COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 # Expose port 80 (internal container port)
 EXPOSE 80
 
-# Run lighttpd as PID 1
+# Set the entrypoint script to handle setup and environment preparation at container start
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Default command executed as PID 1 via the entrypoint's 'exec "$@"'
 # -D: don't go to background (foreground mode, essential for Docker)
 # -f: path to the configuration file
 CMD ["lighttpd", "-D", "-f", "/etc/lighttpd/lighttpd.conf"]
@@ -1788,10 +1837,12 @@ services:
     image: static:inception-v1
     container_name: static
     restart: unless-stopped
+    environment:
+      - STATIC_PORT=${STATIC_PORT}
     networks:
       - inception
     ports:
-      - "8081:80"
+      - "${STATIC_HOST_PORT}:${STATIC_PORT}"
     logging: *default-logging
 ```
 
@@ -1853,7 +1904,9 @@ WORKDIR /var/www/html
 # Expose port 8080
 EXPOSE 8080
 
-# Start PHP's built-in web server listening on all interfaces (PID 1)
+# Default command executed as PID 1 via the entrypoint's 'exec "$@"'
+# -S 0.0.0.0:${ADMINER_PORT}: Starts the PHP built-in web server on the dynamic port.
+# -t /var/www/html: Sets the document root where Adminer (index.php) is located.
 CMD ["php", "-S", "0.0.0.0:8080", "-t", "/var/www/html"]
 ```
 
@@ -1868,13 +1921,15 @@ services:
     image: adminer:inception-v1
     container_name: adminer
     restart: unless-stopped
+    # Overrides the default image command to inject the dynamic port from .env
+    command: ["php", "-S", "0.0.0.0:${ADMINER_PORT}", "-t", "/var/www/html"]
     depends_on:
       mariadb:
         condition: service_healthy
     networks:
       - inception
     ports:
-      - "8080:8080"
+      - "${ADMINER_HOST_PORT}:${ADMINER_PORT}"
     logging: *default-logging
 ```
 
@@ -1954,10 +2009,10 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # Expose the default Arcane port
 EXPOSE 3552
 
-# Set the entrypoint to our script so it loads secrets first
+# Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
-# Start the application directly from the binary
+# Default command executed as PID 1 via the entrypoint's 'exec "$@"'
 CMD ["./arcane"]
 ```
 
@@ -1981,14 +2036,9 @@ if [ "$1" = "./arcane" ]; then
     # 1. Loads secrets into environment variables
     export ENCRYPTION_KEY=$(cat /run/secrets/arc_encryption_key)
     export JWT_SECRET=$(cat /run/secrets/arc_jwt_secret)
-
-    # 2. Configures the Docker client to talk to HAProxy instead of the local socket
-    if [ -n "$HAPROXY_HOST" ]; then
-        export DOCKER_HOST="tcp://${HAPROXY_HOST}:2375"
-    fi
 fi
 
-# 3. Execute the command from CMD
+# 2. Execute the command from CMD
 # 'exec' replaces the shell with the Arcane process so it becomes PID 1.
 # This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec "$@"
@@ -2005,6 +2055,8 @@ services:
     image: arcane:inception-v1
     container_name: arcane
     restart: unless-stopped
+    environment:
+      - PORT=${ARCANE_PORT}
     secrets:
       - arc_encryption_key
       - arc_jwt_secret
@@ -2015,7 +2067,7 @@ services:
     networks:
       - inception
     ports:
-      - "3552:3552"
+      - "${ARCANE_HOST_PORT}:${ARCANE_PORT}"
     logging: *default-logging
 
 # Add to your secrets section at the bottom
@@ -2080,10 +2132,20 @@ RUN apt-get update && apt-get install -y \
 # Copy our custom security configuration
 COPY conf/haproxy.cfg /usr/local/etc/haproxy/haproxy.cfg
 
+# Copy the initialization script to the container
+COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 # Expose the proxy port
 EXPOSE 2375
 
-# Run HAProxy in the foreground
+# Set the entrypoint script to handle setup and environment preparation at container start
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Default command executed as PID 1 via the entrypoint's 'exec "$@"'
+# -f: Specifies the path to the configuration file.
+# By default, HAProxy runs in the foreground unless '-D' is specified, 
+# ensuring the container remains active and manageable by Docker.
 CMD ["haproxy", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
 ```
 
@@ -2149,9 +2211,10 @@ backend docker-socket
 Next, let's update Arcane's `entrypoint.sh` script to route its Docker API calls through our new proxy instead of the default local socket. By setting the `DOCKER_HOST` environment variable, we instruct the Docker client inside Arcane to communicate strictly over TCP with HAProxy. Insert the following conditional block right after loading the secrets, and just before the exec command:
 
 ```bash
-# 2. Configures the Docker client to talk to HAProxy instead of the local socket
-if [ -n "$HAPROXY_HOST" ]; then
-    export DOCKER_HOST="tcp://${HAPROXY_HOST}:2375"
+    # 2. Configures the Docker client to talk to HAProxy instead of the local socket
+    if [ -n "$HAPROXY_HOST" ]; then
+        export DOCKER_HOST="tcp://${HAPROXY_HOST}:${HAPROXY_PORT}"
+    fi
 fi
 
 # 3. Execute the command from CMD
@@ -2172,9 +2235,10 @@ services:
     depends_on:
       haproxy:
         condition: service_started
-    # ... other configs
     environment:
+      - PORT=${ARCANE_PORT}
       - HAPROXY_HOST=${HAPROXY_HOST}
+      - HAPROXY_PORT=${HAPROXY_PORT}
     volumes:
       # Remove: /var/run/docker.sock:/var/run/docker.sock:rw
       - arcane_data:/app/data
@@ -2186,6 +2250,8 @@ services:
     image: haproxy:inception-v1
     container_name: haproxy
     restart: unless-stopped
+    environment:
+      - HAPROXY_PORT=${HAPROXY_PORT}
     volumes:
       # Only the proxy has access to the real docker socket
       - /var/run/docker.sock:/var/run/docker.sock:rw

@@ -21,8 +21,8 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # Expose the default Arcane port
 EXPOSE 3552
 
-# Set the entrypoint to our script so it loads secrets first
+# Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
-# Start the application directly from the binary
+# Default command executed as PID 1 via the entrypoint's 'exec "$@"'
 CMD ["./arcane"]

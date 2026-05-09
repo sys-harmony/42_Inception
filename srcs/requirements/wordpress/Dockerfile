@@ -34,8 +34,10 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # The actual listening port is dynamically injected at runtime via the entrypoint.sh script
 EXPOSE 9000
 
-# Set the entrypoint script to handle setup at container start
+# Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
-# Default command executed by the entrypoint script (PID 1)
+# Default command executed as PID 1 via the entrypoint's 'exec "$@"'
+# -F: Forces php-fpm to run in the foreground rather than becoming a daemon.
+# This ensures the container stays active and that logs are sent to stdout/stderr.
 CMD ["php-fpm8.2", "-F"]

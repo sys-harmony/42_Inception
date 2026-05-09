@@ -22,11 +22,11 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # The actual listening port is dynamically injected at runtime via the docker-compose.yml file
 EXPOSE 3306
 
-# Define the script that will handle the initial setup
+# Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
-# Default command executed by the entrypoint script (PID 1)
-# Ooverridden by docker-compose.yml at runtime to inject dynamic ports.
+# Default command executed as PID 1 via the entrypoint's 'exec "$@"'
+# Overridden by docker-compose.yml at runtime to inject dynamic ports.
 # We must specify --user=mysql to avoid the "run as root" error
 # --bind-address=0.0.0.0 allows connections from other containers
 CMD ["mariadbd", "--user=mysql", "--bind-address=0.0.0.0"]

@@ -272,6 +272,8 @@ Then, edit the local SSH configuration file:
         User <yourlogin>
     ```
 
+     > ⚠️ **Warning for Bridged Mode Users:** If you change physical workstations or networks, your VM's IP address will likely change. If VSCode throws a "Connection timed out" error in the future, log into your VM directly, run `hostname -I` to get the new IP, and update the `HostName` value in this configuration file.
+
     **For NAT Mode:**
 
     ```ssh-config
@@ -291,7 +293,7 @@ Then, edit the local SSH configuration file:
 
 10. To avoid VSCode asking for your password too often, you can set up an SSH key. If you are not interested, skip to the "Local Domain DNS Routing" chapter. Otherwise, if you already have one, skip to the next step.
 
-    > **Be careful:** generating a new SSH key can overwrite an existing one if you are not attentive to the file location, so make sure you know what you are doing before proceeding. If you don’t have an SSH key yet, you first need to create one. In your physical computer’s terminal (not the VM), run:
+    > ⚠️ **Be careful:** generating a new SSH key can overwrite an existing one if you are not attentive to the file location, so make sure you know what you are doing before proceeding. If you don’t have an SSH key yet, you first need to create one. In your physical computer’s terminal (not the VM), run:
 
     ```bash
     ssh-keygen -t rsa -b 4096
@@ -396,7 +398,9 @@ https://docs.docker.com/engine/install/debian/#install-using-the-repository
 
 ### 8. Project Structure & Environment
 
-We will now create the project directory structure. Be careful: the subject specifies a mandatory `srcs` directory, but it does not explicitly state that it must be located at the root of the project. In practice, we place `srcs` inside another directory (here, `inception`), because otherwise your home directory (`/home/yourlogin`) would have to be your Git repository, which is neither practical nor recommended.
+We will now create the project directory structure.
+
+> ⚠️ Be careful: the subject specifies a mandatory `srcs` directory, but it does not explicitly state that it must be located at the root of the project. In practice, we place `srcs` inside another directory (here, `inception`), because otherwise your home directory (`/home/yourlogin`) would have to be your Git repository, which is neither practical nor recommended.
 
 Create the necessary folders:
 

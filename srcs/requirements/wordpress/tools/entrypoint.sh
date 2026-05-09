@@ -94,6 +94,10 @@ if [ "$1" = 'php-fpm8.2' ]; then
             --user_pass="$WP_USER_PASSWORD" \
             --allow-root
 
+        # We hardcode the URLs in wp-config.php to override database settings
+        wp config set WP_HOME "$SITE_URL" --allow-root
+        wp config set WP_SITEURL "$SITE_URL" --allow-root
+
         # 8. Redis Setup (Bonus)
         echo "Configuring Redis Cache with authentication..."
         
@@ -119,16 +123,27 @@ if [ "$1" = 'php-fpm8.2' ]; then
         echo "WordPress installed successfully."
 
     else
-
+    
         # 9. Dynamic Update on Restart
-        # If wp-config.php already exists (persisted volume), we update the database host
-        # to seamlessly apply any potential port changes from the .env file without reinstalling.
-        echo "WordPress is already installed. Updating Database Host in case the port changed..."
+        # If wp-config.php already exists (persisted volume), we update configurations
+        # to seamlessly apply any potential changes from the .env file.
+        echo "WordPress is already installed. Preparing updates..."
+
+        # Temporarily disable object cache to avoid WP-CLI bootstrap failures
+        # This prevents fatal connection errors if the Redis port or password changed
+        OBJECT_CACHE="/var/www/html/wp-content/object-cache.php"
+        if [ -f "$OBJECT_CACHE" ]; then
+            mv "$OBJECT_CACHE" "${OBJECT_CACHE}.disabled"
+        fi
+
+        # Update Database Host in case the port changed in .env
         wp config set DB_HOST "$MARIADB_HOST:$MARIADB_PORT" --allow-root
 
-        # Ensures the WordPress database reflects the current NGINX external port.
-        # This prevents the CMS from forcibly redirecting users to an old or default port.
-        echo "Updating Site URL in case the NGINX host port changed..."
+        # Update the hardcoded URLs in wp-config.php on restart too
+        wp config set WP_HOME "$SITE_URL" --allow-root
+        wp config set WP_SITEURL "$SITE_URL" --allow-root
+
+        # Update Site URL in case the NGINX host port changed in .env
         wp option update home "$SITE_URL" --allow-root
         wp option update siteurl "$SITE_URL" --allow-root
 
@@ -139,13 +154,17 @@ if [ "$1" = 'php-fpm8.2' ]; then
         # Fallback to default port 6379 if REDIS_PORT is empty to avoid WP-CLI errors
         ACTUAL_REDIS_PORT=${REDIS_PORT:-6379}
 
+        # Injects Redis connection constants into wp-config.php
         wp config set WP_REDIS_HOST redis --allow-root
         wp config set WP_REDIS_PORT "$ACTUAL_REDIS_PORT" --raw --allow-root
         wp config set WP_REDIS_PASSWORD "$REDIS_PWD" --allow-root
         
-        # Re-enable the object cache to ensure it's active with new settings
+        # Re-enable object cache
+        # This recreates the object-cache.php with the updated settings
+        rm -f "${OBJECT_CACHE}.disabled"
         wp redis enable --allow-root
-
+        
+        echo "Dynamic configuration updated successfully."
     fi
 fi
 

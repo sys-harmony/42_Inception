@@ -175,7 +175,7 @@ services:
     networks:
       - inception
     ports:
-      - "${FTP_PORT}:${FTP_PORT}"
+      - "${FTP_HOST_PORT}:${FTP_PORT}"
       - "${FTP_PASV_MIN_PORT}-${FTP_PASV_MAX_PORT}:${FTP_PASV_MIN_PORT}-${FTP_PASV_MAX_PORT}" # Passive mode port range
     logging: *default-logging
 

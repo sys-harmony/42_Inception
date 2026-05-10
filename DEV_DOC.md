@@ -2662,3 +2662,118 @@ services:
 To verify your secure setup, simply run `make re`, refresh your Arcane dashboard, and monitor `docker logs -f haproxy` to watch your API requests being safely filtered and routed in real-time.
 
 Source: https://docs.haproxy.org/
+
+## Final Submission & Vogsphere Deployment
+
+To submit your project, you must push your code directly from your Virtual Machine to the 42 Vogsphere repository. Since the VM is isolated, you first need to transfer your authorized SSH key from your host machine to the VM.
+
+> ⚠️ **Warning:** Before proceeding, double-check your `.gitignore` file. Ensure that the `secrets/` directory and your `.env` file are completely ignored. Pushing passwords or environment variables to the Vogsphere will compromise your project.
+
+### Step 1: Prepare the SSH Directory in the VM
+
+First, open the terminal **inside your VM** and create the hidden `.ssh` directory with the correct security permissions:
+
+```sh
+mkdir -p ~/.ssh
+```
+```sh
+chmod 700 ~/.ssh
+```
+
+### Step 2: Transfer your SSH Key from Host to VM
+
+Open a terminal on your physical Host Machine (your Mac/PC) to securely copy your keys to the VM using `scp` (Secure Copy Protocol). The command depends on your VirtualBox network configuration:
+
+**Option A: VirtualBox in NAT Mode**
+Since NAT mode requires port forwarding, you must specify the forwarded SSH port (usually `2222`). Assuming this is a dedicated VM for this project, you can copy the keys using their default names.
+
+```sh
+scp -P 2222 ~/.ssh/id_rsa yourlogin@localhost:~/.ssh/
+```
+```sh
+scp -P 2222 ~/.ssh/id_rsa.pub yourlogin@localhost:~/.ssh/
+```
+
+**Option B: VirtualBox in Bridged Mode**
+In Bridged mode, you communicate directly with the VM's local IP address (find it by running `hostname -I` in the VM).
+
+```sh
+scp ~/.ssh/id_rsa yourlogin@<VM_IP_ADDRESS>:~/.ssh/
+```
+```sh
+scp ~/.ssh/id_rsa.pub yourlogin@<VM_IP_ADDRESS>:~/.ssh/
+```
+
+### Step 3: Secure the Keys inside the VM
+
+Return to the terminal **inside your VM**. SSH is extremely strict about file permissions. If your private key is accessible to anyone else, SSH will refuse to use it. Lock down the files:
+
+```sh
+chmod 600 ~/.ssh/id_rsa
+```
+```sh
+chmod 644 ~/.ssh/id_rsa.pub
+```
+
+### Step 4: Test the Vogsphere Connection
+
+Verify that your VM is now recognized by the 42 servers. Run the following command (adjust the domain to your specific campus if necessary):
+
+```sh
+ssh -T git@vogsphere.42maville.fr
+```
+If you see a message saying `"Welcome <yourlogin>!"`, your SSH connection is successfully configured.
+
+### Step 5: Configure the Git Remote
+
+If your project currently points to a personal GitHub repository, you must detach it and link it to your official 42 Vogsphere repository.
+Remove the old remote (if any):
+
+```sh
+git remote remove origin
+```
+
+Add the Vogsphere repository (you can find this URL on your intra project page):
+
+```sh
+git remote add origin git@vogsphere.42maville.fr:vogsphere/intra-uuid-xxxx-xxxx
+```
+
+Verify that the remote was added correctly:
+
+```sh
+git remote -v
+```
+
+### Step 6: Enforce the master Branch
+
+The Vogsphere server **only** accepts pushes to the `master` branch. Modern Git versions often use `main` by default. If you push `main`, the server will ignore it.
+Check your current branch name:
+
+```sh
+git branch
+```
+
+If your branch is named `main` (or anything else), rename it to `master`:
+
+```sh
+git branch -m master
+```
+
+### Step 7: Final Commit and Push
+
+You are now ready to send your code. Stage your files, create your final commit, and push to the server:
+
+```sh
+git add .
+```
+
+```sh
+git commit -m "feat: final project submission"
+```
+
+```sh
+git push -u origin master
+```
+
+Congratulations! Your Inception infrastructure is now deployed to the Vogsphere and ready for evaluation.

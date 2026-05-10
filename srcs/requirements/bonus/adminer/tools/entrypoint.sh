@@ -10,7 +10,7 @@ if [ "$1" = "php" ]; then
     # 2. Fail-fast validation
     # Ensures the mandatory ADMINER_PORT is set before proceeding
     if [ -z "$ADMINER_PORT" ]; then
-        echo "Error: ADMINER_PORT environment variable is missing." >&2
+        echo "Error: Missing ADMINER_PORT environment variable." >&2
         exit 1
     fi
 

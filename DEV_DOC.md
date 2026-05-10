@@ -504,7 +504,7 @@ services:
     build:
       context: ./requirements/mariadb
       args:
-        - MARIADB_PORT=${MARIADB_PORT}
+        - MARIADB_PORT
     image: mariadb:inception-v1
     container_name: mariadb
     restart: unless-stopped
@@ -523,10 +523,10 @@ services:
       start_period: 15s
     environment:
       # Explicit mapping: only injects required variables instead of using 'env_file: .env'
-      - MARIADB_HOST=${MARIADB_HOST}
-      - MARIADB_PORT=${MARIADB_PORT}
-      - MARIADB_DATABASE=${MARIADB_DATABASE}
-      - MARIADB_USER=${MARIADB_USER}
+      - MARIADB_HOST
+      - MARIADB_PORT
+      - MARIADB_DATABASE
+      - MARIADB_USER
     secrets:
       - db_password
       - db_root_password
@@ -540,7 +540,7 @@ services:
     build:
       context: ./requirements/wordpress
       args:
-        - WP_PORT=${WP_PORT}
+        - WP_PORT
     image: wordpress:inception-v1
     container_name: wordpress
     restart: unless-stopped
@@ -560,19 +560,20 @@ services:
       start_period: 30s # Gives wp-cli enough time to download and install everything during the first boot
     environment:
       # Explicit mapping: only injects required variables instead of using 'env_file: .env'
-      - DOMAIN_NAME=${DOMAIN_NAME}
-      - MARIADB_HOST=${MARIADB_HOST}
-      - MARIADB_PORT=${MARIADB_PORT}
-      - MARIADB_DATABASE=${MARIADB_DATABASE}
-      - MARIADB_USER=${MARIADB_USER}
-      - WP_VERSION=${WP_VERSION}
-      - WP_TITLE=${WP_TITLE}
-      - WP_PORT=${WP_PORT}
-      - WP_ADMIN_USER=${WP_ADMIN_USER}
-      - WP_ADMIN_EMAIL=${WP_ADMIN_EMAIL}
-      - WP_USER=${WP_USER}
-      - WP_USER_EMAIL=${WP_USER_EMAIL}
-      - NGINX_HOST_PORT=${NGINX_HOST_PORT}
+      - DOMAIN_NAME
+      - MARIADB_HOST
+      - MARIADB_PORT
+      - MARIADB_DATABASE
+      - MARIADB_USER
+      - WP_VERSION
+      - WP_TITLE
+      - WP_PORT
+      - WP_ADMIN_USER
+      - WP_ADMIN_EMAIL
+      - WP_USER
+      - WP_USER_EMAIL
+      - NGINX_HOST_PORT
+      - REDIS_PORT
     secrets:
       - db_password
       - wp_admin_password
@@ -587,7 +588,7 @@ services:
     build:
       context: ./requirements/nginx
       args:
-        - NGINX_PORT=${NGINX_PORT}
+        - NGINX_PORT
     image: nginx:inception-v1
     container_name: nginx
     restart: unless-stopped
@@ -607,9 +608,9 @@ services:
       retries: 5
     environment:
       # Explicit mapping: only injects required variables instead of using 'env_file: .env'
-      - DOMAIN_NAME=${DOMAIN_NAME}
-      - WP_PORT=${WP_PORT}
-      - NGINX_PORT=${NGINX_PORT}
+      - DOMAIN_NAME
+      - WP_PORT
+      - NGINX_PORT
     volumes:
       - wordpress_data:/var/www/html:ro
     networks:
@@ -843,23 +844,30 @@ set -e
 # Only run setup logic if the command passed is 'mariadbd'
 if [ "$1" = 'mariadbd' ]; then
 
-    # 1. Persistence Check
+    # 1. Fail-fast validation
+    # The port is required for BOTH installation and restarts
+    if [ -z "$MARIADB_PORT" ]; then
+        echo "Error: Missing MARIADB_PORT environment variable." >&2
+        exit 1
+    fi
+
+    # 2. Persistence Check
     # Skips the entire installation setup if '.initialized' already exists on the volume
     if [ ! -f "/var/lib/mysql/.initialized" ]; then
         
-        # 2. Fetch secrets from Docker secret mount points (RAM-only files)
+        # 3. Fetch secrets from Docker secret mount points (RAM-only files)
         # This avoids passing sensitive passwords through environment variables
         MARIADB_ROOT_PASSWORD=$(cat /run/secrets/db_root_password)
         MARIADB_PASSWORD=$(cat /run/secrets/db_password)
 
-        # 3. Fail-fast validation
+        # 4. Fail-fast validation
         # Ensures all necessary credentials are present before attempting installation
         if [ -z "$MARIADB_ROOT_PASSWORD" ] || [ -z "$MARIADB_DATABASE" ] || [ -z "$MARIADB_USER" ] || [ -z "$MARIADB_PASSWORD" ]; then
-            echo "Error: Missing mandatory database environment variables or secrets." >&2
+            echo "Error: Missing database environment variable(s) and/or secret(s)." >&2
             exit 1
         fi
 
-        # 4. MariaDB Installation Logic
+        # 5. MariaDB Installation Logic
         echo "Initializing MariaDB database..."
 
         # Ensure the mysql user owns the data directory for proper permissions
@@ -883,14 +891,14 @@ EOF
         echo "MariaDB initialized successfully."
     fi
 
-    # 5. Dynamic Configuration via Command Arguments
+    # 6. Dynamic Configuration via Command Arguments
     # Injects parameters directly into the command line arguments using 'set --'.
     # We must specify --user=mysql to avoid the "run as root" error
     # --bind-address=0.0.0.0 allows connections from other containers
     set -- "$@" --user=mysql --bind-address=0.0.0.0 --port="$MARIADB_PORT"
 fi
 
-# 6. Execute the command from CMD
+# 7. Execute the command from CMD
 # 'exec' replaces the shell with the MariaDB process so it becomes PID 1.
 # This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec "$@"
@@ -970,11 +978,19 @@ set -e
 # Only run setup logic if the command passed is 'php-fpm8.2'
 if [ "$1" = 'php-fpm8.2' ]; then
 
-    # 1. Update PHP-FPM listening port dynamically before starting
+    # 1. Global Fail-fast validation
+    # These variables are strictly required for BOTH installation and restarts.
+    # We check them before doing any file modifications or variable calculations.
+    if [ -z "$WP_PORT" ] || [ -z "$DOMAIN_NAME" ] || [ -z "$NGINX_HOST_PORT" ] || [ -z "$MARIADB_HOST" ] || [ -z "$MARIADB_PORT" ]; then
+        echo "Error: Missing WP_PORT, DOMAIN_NAME, NGINX_HOST_PORT, MARIADB_HOST and/or MARIADB_PORT environment variable(s)." >&2
+        exit 1
+    fi
+
+    # 2. Update PHP-FPM listening port dynamically before starting
     # The regex '^listen = .*' ensures it works even if the container restarts
     sed -i "s/^listen = .*/listen = ${WP_PORT}/" /etc/php/8.2/fpm/pool.d/www.conf
 
-    # 2. Dynamic Site URL Calculation
+    # 3. Dynamic Site URL Calculation
     # Computes the absolute WordPress URL, appending the external NGINX port
     # if it differs from the standard 443. This prevents redirection loops.
     if [ "$NGINX_HOST_PORT" = "443" ]; then
@@ -983,56 +999,56 @@ if [ "$1" = 'php-fpm8.2' ]; then
         SITE_URL="https://$DOMAIN_NAME:$NGINX_HOST_PORT"
     fi
 
-    # 3. Persistence Check
+    # 4. Persistence Check
     # Skips the entire installation setup if 'wp-config.php' already exists on the volume
     if [ ! -f "/var/www/html/wp-config.php" ]; then
 
-        # 4. Fetch secrets from Docker secret mount points
+        # 5. Fetch secrets from Docker secret mount points
         # Retrieves sensitive credentials from Docker secret files
         MARIADB_PASSWORD=$(cat /run/secrets/db_password)
         WP_ADMIN_PASSWORD=$(cat /run/secrets/wp_admin_password)
         WP_USER_PASSWORD=$(cat /run/secrets/wp_user_password)
 
-        # 5. Fail-fast validation
+        # 6. Fail-fast validation
         # Ensures all necessary credentials are present before attempting installation
 
         # Database checks
-        if [ -z "$MARIADB_HOST" ] || [ -z "$MARIADB_DATABASE" ] || [ -z "$MARIADB_USER" ] || [ -z "$MARIADB_PASSWORD" ]; then
-            echo "Error: Missing database environment variables or secrets." >&2
+        if [ -z "$MARIADB_DATABASE" ] || [ -z "$MARIADB_USER" ] || [ -z "$MARIADB_PASSWORD" ]; then
+            echo "Error: Missing database environment variable(s) and/or secret." >&2
             exit 1
         fi
 
         # Admin checks
         if [ -z "$WP_ADMIN_USER" ] || [ -z "$WP_ADMIN_PASSWORD" ] || [ -z "$WP_ADMIN_EMAIL" ]; then
-            echo "Error: Missing admin environment variables or secrets." >&2
+            echo "Error: Missing admin environment variable(s) and/or secret." >&2
             exit 1
         fi
 
-        # Site and Secondary User checks
-        if [ -z "$DOMAIN_NAME" ] || [ -z "$WP_TITLE" ] || [ -z "$WP_USER" ] || [ -z "$WP_USER_PASSWORD" ] || [ -z "$WP_USER_EMAIL" ]; then
-            echo "Error: Missing site or secondary user environment variables." >&2
+        # Secondary User checks
+        if [ -z "$WP_USER" ] || [ -z "$WP_USER_PASSWORD" ] || [ -z "$WP_USER_EMAIL" ]; then
+            echo "Error: Missing secondary user environment variable(s) and/or secret." >&2
             exit 1
         fi
 
-        # 6. Service Dependencies
+        # Other checks
+        if [ -z "$WP_TITLE" ] || [ -z "$WP_VERSION" ]; then
+            echo "Error: Missing WP_TITLE and/or WP_VERSION environment variable(s)." >&2
+            exit 1
+        fi
+
+        # 7. Service Dependencies
         # Ensures MariaDB is ready before running WP-CLI commands
         echo "Waiting for MariaDB to be ready..."
         until mariadb -h"$MARIADB_HOST" -P "$MARIADB_PORT" -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
             sleep 2
         done
 
-        # 7. WordPress Configuration Logic
+        # 8. WordPress Configuration Logic
         echo "WordPress not found. Starting installation..."
 
         # Downloads the specific version of WordPress core files
-        # If WP_VERSION is not defined, it will fallback to the latest version
-        if [ -n "$WP_VERSION" ]; then
-            echo "Downloading WordPress version $WP_VERSION..."
-            wp core download --version="$WP_VERSION" --allow-root
-        else
-            echo "Downloading the latest WordPress version..."
-            wp core download --allow-root
-        fi
+        echo "Downloading WordPress version $WP_VERSION..."
+        wp core download --version="$WP_VERSION" --allow-root
 
         # Generates wp-config.php with provided database credentials
         wp config create \
@@ -1062,36 +1078,31 @@ if [ "$1" = 'php-fpm8.2' ]; then
         wp config set WP_HOME "$SITE_URL" --allow-root
         wp config set WP_SITEURL "$SITE_URL" --allow-root
 
-        # Note: If implementing the Redis bonus, inject the configuration logic here.
-
         # Finalizes file permissions for the web server (www-data)
         chown -R www-data:www-data /var/www/html
-        chmod -R 755 /var/www/html
+        chmod -R 775 /var/www/html
         echo "WordPress installed successfully."
 
     else
     
-        # 8. Dynamic Update on Restart
-        # If wp-config.php already exists (persisted volume), we update configurations
-        # to seamlessly apply any potential changes from the .env file.
+        # 9. Dynamic Update on Restart
+        # If wp-config.php exists (persisted volume), we refresh the configuration.
         echo "WordPress is already installed. Preparing updates..."
 
-        # Update Database Host in case the port changed in .env
+        # Update the filesystem configuration (wp-config.php)
         wp config set DB_HOST "$MARIADB_HOST:$MARIADB_PORT" --allow-root
-
-        # Update the hardcoded URLs in wp-config.php on restart too
         wp config set WP_HOME "$SITE_URL" --allow-root
         wp config set WP_SITEURL "$SITE_URL" --allow-root
 
-        # Update Site URL in case the NGINX host port changed in .env
+        # Update the persistent database options (MariaDB)
         wp option update home "$SITE_URL" --allow-root
         wp option update siteurl "$SITE_URL" --allow-root
-
+        
         echo "Dynamic configuration updated successfully."
     fi
 fi
 
-# 9. Execute the command from CMD
+# 10. Execute the command from CMD
 # 'exec' replaces the shell with the PHP-FPM process so it becomes PID 1.
 # This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec "$@"
@@ -1157,9 +1168,9 @@ set -e
 if [ "$1" = "nginx" ]; then
 
     # 1. Fail-fast validation
-    # Ensures DOMAIN_NAME is set before generating certificates
-    if [ -z "$DOMAIN_NAME" ]; then
-        echo "[ERROR] DOMAIN_NAME environment variable is missing." >&2
+    # Ensures all mandatory environment variables are set before proceeding
+    if [ -z "$DOMAIN_NAME" ] || [ -z "$NGINX_PORT" ] || [ -z "$WP_PORT" ]; then
+        echo "Error: Missing DOMAIN_NAME, NGINX_PORT and/or WP_PORT environment variable(s)." >&2
         exit 1
     fi
 
@@ -1382,8 +1393,8 @@ if [ "$1" = "redis-server" ]; then
     REDIS_PASSWORD=$(cat /run/secrets/redis_password)
 
     # 2. Fail-fast validation
-    if [ -z "$REDIS_PASSWORD" ] || [ -z "$REDIS_PORT" ]; then
-        echo "Error: REDIS_PASSWORD secret or REDIS_PORT variable is missing." >&2
+    if [ -z "$REDIS_PORT" ] || [ -z "$REDIS_PASSWORD" ]; then
+        echo "Error: Missing REDIS_PORT environment variable and/or REDIS_PASSWORD secret." >&2
         exit 1
     fi
 
@@ -1431,7 +1442,7 @@ services:
     build:
       context: ./requirements/bonus/redis
       args:
-        - REDIS_PORT=${REDIS_PORT}
+        - REDIS_PORT
     image: redis:inception-v1
     container_name: redis
     restart: unless-stopped
@@ -1449,7 +1460,7 @@ services:
       retries: 5
       start_period: 5s
     environment:
-      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_PORT
     secrets:
       - redis_password
     networks:
@@ -1463,24 +1474,133 @@ secrets:
     file: ../secrets/redis_password.txt
 ```
 
-The WordPress `entrypoint.sh` file also needs editing. Replace the end of the file, following the secondary account creation, with the following code:
+The WordPress `entrypoint.sh` file also needs updating. Replace it with the following:
 
 ```sh
-        # 8. Redis Setup (Bonus)
+#!/bin/sh
+
+# Stop the script immediately if any command fails
+set -e
+
+# Only run setup logic if the command passed is 'php-fpm8.2'
+if [ "$1" = 'php-fpm8.2' ]; then
+
+    # 1. Fetch the Redis Password (Bonus) from Docker secret mount points
+    REDIS_PASSWORD=$(cat /run/secrets/redis_password)
+
+    # 2. Fail-fast validation
+    # These variables are strictly required for BOTH installation and restarts.
+    # We check them before doing any file modifications or variable calculations.
+    if [ -z "$WP_PORT" ] || [ -z "$DOMAIN_NAME" ] || [ -z "$NGINX_HOST_PORT" ] || [ -z "$MARIADB_HOST" ] || [ -z "$MARIADB_PORT" ]; then
+        echo "Error: Missing WP_PORT, DOMAIN_NAME, NGINX_HOST_PORT, MARIADB_HOST and/or MARIADB_PORT environment variable(s)." >&2
+        exit 1
+    fi
+
+    if [ -z "$REDIS_PORT" ] || [ -z "$REDIS_PASSWORD" ]; then
+        echo "Error: Missing REDIS_PORT environment variable and/or REDIS_PASSWORD secret." >&2
+        exit 1
+    fi
+
+    # 3. Update PHP-FPM listening port dynamically before starting
+    # The regex '^listen = .*' ensures it works even if the container restarts
+    sed -i "s/^listen = .*/listen = ${WP_PORT}/" /etc/php/8.2/fpm/pool.d/www.conf
+
+    # 4. Dynamic Site URL Calculation
+    # Computes the absolute WordPress URL, appending the external NGINX port
+    # if it differs from the standard 443. This prevents redirection loops.
+    if [ "$NGINX_HOST_PORT" = "443" ]; then
+        SITE_URL="https://$DOMAIN_NAME"
+    else
+        SITE_URL="https://$DOMAIN_NAME:$NGINX_HOST_PORT"
+    fi
+
+    # 5. Persistence Check
+    # Skips the entire installation setup if 'wp-config.php' already exists on the volume
+    if [ ! -f "/var/www/html/wp-config.php" ]; then
+
+        # 6. Fetch secrets from Docker secret mount points
+        # Retrieves sensitive credentials from Docker secret files
+        MARIADB_PASSWORD=$(cat /run/secrets/db_password)
+        WP_ADMIN_PASSWORD=$(cat /run/secrets/wp_admin_password)
+        WP_USER_PASSWORD=$(cat /run/secrets/wp_user_password)
+
+        # 7. Fail-fast validation
+        # Ensures all necessary credentials are present before attempting installation
+
+        # Database checks
+        if [ -z "$MARIADB_DATABASE" ] || [ -z "$MARIADB_USER" ] || [ -z "$MARIADB_PASSWORD" ]; then
+            echo "Error: Missing database environment variable(s) and/or secret." >&2
+            exit 1
+        fi
+
+        # Admin checks
+        if [ -z "$WP_ADMIN_USER" ] || [ -z "$WP_ADMIN_PASSWORD" ] || [ -z "$WP_ADMIN_EMAIL" ]; then
+            echo "Error: Missing admin environment variable(s) and/or secret." >&2
+            exit 1
+        fi
+
+        # Secondary User checks
+        if [ -z "$WP_USER" ] || [ -z "$WP_USER_PASSWORD" ] || [ -z "$WP_USER_EMAIL" ]; then
+            echo "Error: Missing secondary user environment variable(s) and/or secret." >&2
+            exit 1
+        fi
+
+        # Other checks
+        if [ -z "$WP_TITLE" ] || [ -z "$WP_VERSION" ]; then
+            echo "Error: Missing WP_TITLE and/or WP_VERSION environment variable(s)." >&2
+            exit 1
+        fi
+
+        # 8. Service Dependencies
+        # Ensures MariaDB is ready before running WP-CLI commands
+        echo "Waiting for MariaDB to be ready..."
+        until mariadb -h"$MARIADB_HOST" -P "$MARIADB_PORT" -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
+            sleep 2
+        done
+
+        # 9. WordPress Configuration Logic
+        echo "WordPress not found. Starting installation..."
+
+        # Downloads the specific version of WordPress core files
+        echo "Downloading WordPress version $WP_VERSION..."
+        wp core download --version="$WP_VERSION" --allow-root
+
+        # Generates wp-config.php with provided database credentials
+        wp config create \
+            --dbname="$MARIADB_DATABASE" \
+            --dbuser="$MARIADB_USER" \
+            --dbpass="$MARIADB_PASSWORD" \
+            --dbhost="$MARIADB_HOST:$MARIADB_PORT" \
+            --allow-root
+
+        # Configures the database and creates the primary administrator account
+        wp core install \
+            --url="$SITE_URL" \
+            --title="$WP_TITLE" \
+            --admin_user="$WP_ADMIN_USER" \
+            --admin_password="$WP_ADMIN_PASSWORD" \
+            --admin_email="$WP_ADMIN_EMAIL" \
+            --skip-email \
+            --allow-root
+
+        # Creates the mandatory non-administrator user required by the subject
+        wp user create "$WP_USER" "$WP_USER_EMAIL" \
+            --role=author \
+            --user_pass="$WP_USER_PASSWORD" \
+            --allow-root
+
+        # We hardcode the URLs in wp-config.php to override database settings
+        wp config set WP_HOME "$SITE_URL" --allow-root
+        wp config set WP_SITEURL "$SITE_URL" --allow-root
+
+        # 10. Redis Setup (Bonus)
         echo "Configuring Redis Cache with authentication..."
-        
-        # Fetch the redis password from secret to use it in wp-config
-        REDIS_PWD=$(cat /run/secrets/redis_password)
-
-        # Fallback to default port 6379 if REDIS_PORT is empty to avoid WP-CLI errors
-        ACTUAL_REDIS_PORT=${REDIS_PORT:-6379}
-
         wp plugin install redis-cache --activate --allow-root
 
         # Injects Redis connection constants into wp-config.php
         wp config set WP_REDIS_HOST redis --allow-root
-        wp config set WP_REDIS_PORT "$ACTUAL_REDIS_PORT" --raw --allow-root
-        wp config set WP_REDIS_PASSWORD "$REDIS_PWD" --allow-root
+        wp config set WP_REDIS_PORT "$REDIS_PORT" --raw --allow-root
+        wp config set WP_REDIS_PASSWORD "$REDIS_PASSWORD" --allow-root
 
         # Enables the object cache to start using Redis
         wp redis enable --allow-root
@@ -1492,43 +1612,32 @@ The WordPress `entrypoint.sh` file also needs editing. Replace the end of the fi
 
     else
     
-        # 9. Dynamic Update on Restart
-        # If wp-config.php already exists (persisted volume), we update configurations
-        # to seamlessly apply any potential changes from the .env file.
+        # 11. Dynamic Update on Restart
+        # If wp-config.php exists (persisted volume), we refresh the configuration.
         echo "WordPress is already installed. Preparing updates..."
 
         # Temporarily disable object cache to avoid WP-CLI bootstrap failures
-        # This prevents fatal connection errors if the Redis port or password changed
         OBJECT_CACHE="/var/www/html/wp-content/object-cache.php"
         if [ -f "$OBJECT_CACHE" ]; then
             mv "$OBJECT_CACHE" "${OBJECT_CACHE}.disabled"
         fi
 
-        # Update Database Host in case the port changed in .env
+        # Update the filesystem configuration (wp-config.php)
         wp config set DB_HOST "$MARIADB_HOST:$MARIADB_PORT" --allow-root
-
-        # Update the hardcoded URLs in wp-config.php on restart too
         wp config set WP_HOME "$SITE_URL" --allow-root
         wp config set WP_SITEURL "$SITE_URL" --allow-root
 
-        # Update Site URL in case the NGINX host port changed in .env
+        # Update the persistent database options (MariaDB)
         wp option update home "$SITE_URL" --allow-root
         wp option update siteurl "$SITE_URL" --allow-root
 
-        # Update Redis configuration in case the port or password changed
+        # Update Redis connection constants (wp-config.php)
         echo "Updating Redis configuration..."
-        REDIS_PWD=$(cat /run/secrets/redis_password)
-        
-        # Fallback to default port 6379 if REDIS_PORT is empty to avoid WP-CLI errors
-        ACTUAL_REDIS_PORT=${REDIS_PORT:-6379}
-
-        # Injects Redis connection constants into wp-config.php
         wp config set WP_REDIS_HOST redis --allow-root
-        wp config set WP_REDIS_PORT "$ACTUAL_REDIS_PORT" --raw --allow-root
-        wp config set WP_REDIS_PASSWORD "$REDIS_PWD" --allow-root
+        wp config set WP_REDIS_PORT "$REDIS_PORT" --raw --allow-root
+        wp config set WP_REDIS_PASSWORD "$REDIS_PASSWORD" --allow-root
         
         # Re-enable object cache
-        # This recreates the object-cache.php with the updated settings
         rm -f "${OBJECT_CACHE}.disabled"
         wp redis enable --allow-root
         
@@ -1536,7 +1645,7 @@ The WordPress `entrypoint.sh` file also needs editing. Replace the end of the fi
     fi
 fi
 
-# 10. Execute the command from CMD
+# 12. Execute the command from CMD
 # 'exec' replaces the shell with the PHP-FPM process so it becomes PID 1.
 # This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec "$@"
@@ -1657,40 +1766,38 @@ set -e
 if [ "$1" = "vsftpd" ]; then
 
     # 1. Fetch secrets from Docker secret mount points (RAM-only files)
-    # This avoids passing sensitive passwords through environment variables
     FTP_PASSWORD=$(cat /run/secrets/ftp_password)
 
     # 2. Fail-fast validation
-    # Ensures all necessary credentials are present before attempting installation
+    # Check for credentials
     if [ -z "$FTP_USER" ] || [ -z "$FTP_PASSWORD" ]; then
-        echo "Error: FTP_USER or ftp_password secret is missing." >&2
+        echo "Error: Missing FTP_USER environment variable and/or FTP_PASSWORD secret." >&2
+        exit 1
+    fi
+
+    # Check for network variables
+    if [ -z "$FTP_PORT" ] || [ -z "$FTP_PASV_MIN_PORT" ] || [ -z "$FTP_PASV_MAX_PORT" ]; then
+        echo "Error: Missing FTP port environment variable(s)." >&2
         exit 1
     fi
 
     # 3. User Creation and Permissions
-    # Create the FTP user with a specific UID to match a common standard or 
-    # simply add him to the www-data group.
     if ! id "$FTP_USER" >/dev/null 2>&1; then
-        # We create the user and force him into the www-data group (GID 33)
         useradd -m -d /var/www/html -s /bin/bash -G www-data "$FTP_USER"
         echo "$FTP_USER:$FTP_PASSWORD" | chpasswd
     else
         usermod -d /var/www/html -G www-data "$FTP_USER"
     fi
 
-    # We give ownership to www-data (so WordPress can write)
-    # and we set permissions to 775 (so the group www-data, including our FTP user, can write)
     echo "Setting permissions for /var/www/html..."
     chown -R www-data:www-data /var/www/html
     chmod -R 775 /var/www/html
 
     # 4. Prepare the runtime environment
-    # vsftpd requires this specific directory to run for isolation (chroot)
     mkdir -p /var/run/vsftpd/empty
 
     # 5. Dynamic Port Configuration
-    # Injects the ports defined in the .env file into the vsftpd configuration.
-    # This ensures the server listens on the correct ports for both command and passive modes.
+    # Injects the ports defined in the .env file into the vsftpd configuration
     echo "Configuring dynamic ports for vsftpd..."
     sed -i "s/^listen_port=.*/listen_port=${FTP_PORT}/" /etc/vsftpd.conf
     sed -i "s/^pasv_min_port=.*/pasv_min_port=${FTP_PASV_MIN_PORT}/" /etc/vsftpd.conf
@@ -1700,8 +1807,6 @@ if [ "$1" = "vsftpd" ]; then
 fi
 
 # 6. Execute the command from CMD
-# 'exec' replaces the shell with the vsftpd process so it becomes PID 1.
-# This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec "$@"
 ```
 
@@ -1717,9 +1822,9 @@ services:
     build:
       context: ./requirements/bonus/ftp
       args:
-        - FTP_PORT=${FTP_PORT}
-        - FTP_PASV_MIN_PORT=${FTP_PASV_MIN_PORT}
-        - FTP_PASV_MAX_PORT=${FTP_PASV_MAX_PORT}
+        - FTP_PORT
+        - FTP_PASV_MIN_PORT
+        - FTP_PASV_MAX_PORT
     image: ftp:inception-v1
     container_name: ftp
     restart: unless-stopped
@@ -1728,10 +1833,10 @@ services:
         condition: service_healthy
     environment:
       # Explicit mapping: only injects required variables instead of using 'env_file: .env'
-      - FTP_USER=${FTP_USER}
-      - FTP_PORT=${FTP_PORT}
-      - FTP_PASV_MIN_PORT=${FTP_PASV_MIN_PORT}
-      - FTP_PASV_MAX_PORT=${FTP_PASV_MAX_PORT}
+      - FTP_USER
+      - FTP_PORT
+      - FTP_PASV_MIN_PORT
+      - FTP_PASV_MAX_PORT
     secrets:
       - ftp_password
     volumes:
@@ -1880,7 +1985,7 @@ if [ "$1" = "lighttpd" ]; then
     # 1. Fail-fast validation
     # Ensures the mandatory STATIC_PORT is set before proceeding
     if [ -z "$STATIC_PORT" ]; then
-        echo "Error: STATIC_PORT environment variable is missing." >&2
+        echo "Error: Missing STATIC_PORT environment variable." >&2
         exit 1
     fi
 
@@ -1968,12 +2073,12 @@ services:
     build:
       context: ./requirements/bonus/static
       args:
-        - STATIC_PORT=${STATIC_PORT}
+        - STATIC_PORT
     image: static:inception-v1
     container_name: static
     restart: unless-stopped
     environment:
-      - STATIC_PORT=${STATIC_PORT}
+      - STATIC_PORT
     networks:
       - inception
     ports:
@@ -2080,7 +2185,7 @@ if [ "$1" = "php" ]; then
     # 2. Fail-fast validation
     # Ensures the mandatory ADMINER_PORT is set before proceeding
     if [ -z "$ADMINER_PORT" ]; then
-        echo "Error: ADMINER_PORT environment variable is missing." >&2
+        echo "Error: Missing ADMINER_PORT environment variable." >&2
         exit 1
     fi
 
@@ -2105,8 +2210,8 @@ services:
     build:
       context: ./requirements/bonus/adminer
       args:
-        - ADMINER_VERSION=${ADMINER_VERSION}
-        - ADMINER_PORT=${ADMINER_PORT}
+        - ADMINER_VERSION
+        - ADMINER_PORT
     image: adminer:inception-v1
     container_name: adminer
     restart: unless-stopped
@@ -2114,7 +2219,7 @@ services:
       mariadb:
         condition: service_healthy
     environment:
-      - ADMINER_PORT=${ADMINER_PORT}
+      - ADMINER_PORT
     networks:
       - inception
     ports:
@@ -2233,32 +2338,24 @@ set -e
 if [ "$1" = "./arcane" ]; then
 
     # 1. Fetch secrets from Docker secret mount points
-    # These are mandatory for Arcane's internal encryption and session management
-    ENCRYPTION_KEY=$(cat /run/secrets/arc_encryption_key)
-    JWT_SECRET=$(cat /run/secrets/arc_jwt_secret)
+    ARC_ENCRYPTION_KEY=$(cat /run/secrets/arc_encryption_key)
+    ARC_JWT_SECRET=$(cat /run/secrets/arc_jwt_secret)
 
     # 2. Fail-fast validation
     # Check for secrets and mandatory environment variables
-    if [ -z "$ENCRYPTION_KEY" ] || [ -z "$JWT_SECRET" ]; then
-        echo "Error: Arcane secrets (encryption key or JWT secret) are missing." >&2
-        exit 1
-    fi
-
-    if [ -z "$PORT" ]; then
-        echo "Error: ARCANE_PORT (mapped to PORT) environment variable is missing." >&2
+    if [ -z "$ARCANE_PORT" ] || [ -z "$ARC_ENCRYPTION_KEY" ] || [ -z "$ARC_JWT_SECRET" ]; then
+        echo "Error: Missing ARCANE_PORT environment variable, ARC_ENCRYPTION_KEY and/or ARC_JWT_SECRET secret(s)." >&2
         exit 1
     fi
 
     # 3. Export secrets to environment for the application
-    export ENCRYPTION_KEY
-    export JWT_SECRET
-
-    echo "Starting Arcane using local Docker socket..."
+    export PORT="$ARCANE_PORT"
+    export ENCRYPTION_KEY="$ARC_ENCRYPTION_KEY"
+    export JWT_SECRET="$ARC_JWT_SECRET"
 fi
 
 # 4. Execute the command from CMD
 # 'exec' replaces the shell with the Arcane process so it becomes PID 1.
-# This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec "$@"
 ```
 
@@ -2271,13 +2368,13 @@ services:
     build:
       context: ./requirements/bonus/arcane
       args:
-        - ARCANE_VERSION=${ARCANE_VERSION}
-        - ARCANE_PORT=${ARCANE_PORT}
+        - ARCANE_VERSION
+        - ARCANE_PORT
     image: arcane:inception-v1
     container_name: arcane
     restart: unless-stopped
     environment:
-      - PORT=${ARCANE_PORT}
+      - ARCANE_PORT
     secrets:
       - arc_encryption_key
       - arc_jwt_secret
@@ -2392,7 +2489,7 @@ if [ "$1" = "haproxy" ]; then
     # 1. Fail-fast validation
     # Ensures the mandatory HAPROXY_PORT is set before proceeding
     if [ -z "$HAPROXY_PORT" ]; then
-        echo "Error: HAPROXY_PORT environment variable is missing." >&2
+        echo "Error: Missing HAPROXY_PORT environment variable." >&2
         exit 1
     fi
 
@@ -2472,8 +2569,9 @@ Next, let's update Arcane's `entrypoint.sh` script to route its Docker API calls
 
 ```sh
     # 3. Export secrets to environment for the application
-    export ENCRYPTION_KEY
-    export JWT_SECRET
+    export PORT="$ARCANE_PORT"
+    export ENCRYPTION_KEY="$ARC_ENCRYPTION_KEY"
+    export JWT_SECRET="$ARC_JWT_SECRET"
 
     # 4. Configures the Docker client to talk to HAProxy instead of the local socket
     if [ -n "$HAPROXY_HOST" ]; then
@@ -2507,9 +2605,9 @@ services:
       haproxy:
         condition: service_started
     environment:
-      - PORT=${ARCANE_PORT}
-      - HAPROXY_HOST=${HAPROXY_HOST}
-      - HAPROXY_PORT=${HAPROXY_PORT}
+      - ARCANE_PORT
+      - HAPROXY_HOST
+      - HAPROXY_PORT
     volumes:
       # Remove: /var/run/docker.sock:/var/run/docker.sock:rw
       - arcane_data:/app/data
@@ -2519,12 +2617,12 @@ services:
     build:
       context: ./requirements/bonus/haproxy
       args:
-        - HAPROXY_PORT=${HAPROXY_PORT}
+        - HAPROXY_PORT
     image: haproxy:inception-v1
     container_name: haproxy
     restart: unless-stopped
     environment:
-      - HAPROXY_PORT=${HAPROXY_PORT}
+      - HAPROXY_PORT
     volumes:
       # Only the proxy has access to the real docker socket
       - /var/run/docker.sock:/var/run/docker.sock:rw

@@ -7,9 +7,9 @@ set -e
 if [ "$1" = "nginx" ]; then
 
     # 1. Fail-fast validation
-    # Ensures DOMAIN_NAME is set before generating certificates
-    if [ -z "$DOMAIN_NAME" ]; then
-        echo "[ERROR] DOMAIN_NAME environment variable is missing." >&2
+    # Ensures all mandatory environment variables are set before proceeding
+    if [ -z "$DOMAIN_NAME" ] || [ -z "$NGINX_PORT" ] || [ -z "$WP_PORT" ]; then
+        echo "Error: Missing DOMAIN_NAME, NGINX_PORT and/or WP_PORT environment variable(s)." >&2
         exit 1
     fi
 

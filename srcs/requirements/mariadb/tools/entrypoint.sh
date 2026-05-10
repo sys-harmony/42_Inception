@@ -6,23 +6,30 @@ set -e
 # Only run setup logic if the command passed is 'mariadbd'
 if [ "$1" = 'mariadbd' ]; then
 
-    # 1. Persistence Check
+    # 1. Fail-fast validation
+    # The port is required for BOTH installation and restarts
+    if [ -z "$MARIADB_PORT" ]; then
+        echo "Error: Missing MARIADB_PORT environment variable." >&2
+        exit 1
+    fi
+
+    # 2. Persistence Check
     # Skips the entire installation setup if '.initialized' already exists on the volume
     if [ ! -f "/var/lib/mysql/.initialized" ]; then
         
-        # 2. Fetch secrets from Docker secret mount points (RAM-only files)
+        # 3. Fetch secrets from Docker secret mount points (RAM-only files)
         # This avoids passing sensitive passwords through environment variables
         MARIADB_ROOT_PASSWORD=$(cat /run/secrets/db_root_password)
         MARIADB_PASSWORD=$(cat /run/secrets/db_password)
 
-        # 3. Fail-fast validation
+        # 4. Fail-fast validation
         # Ensures all necessary credentials are present before attempting installation
         if [ -z "$MARIADB_ROOT_PASSWORD" ] || [ -z "$MARIADB_DATABASE" ] || [ -z "$MARIADB_USER" ] || [ -z "$MARIADB_PASSWORD" ]; then
-            echo "Error: Missing mandatory database environment variables or secrets." >&2
+            echo "Error: Missing database environment variable(s) and/or secret(s)." >&2
             exit 1
         fi
 
-        # 4. MariaDB Installation Logic
+        # 5. MariaDB Installation Logic
         echo "Initializing MariaDB database..."
 
         # Ensure the mysql user owns the data directory for proper permissions
@@ -46,14 +53,14 @@ EOF
         echo "MariaDB initialized successfully."
     fi
 
-    # 5. Dynamic Configuration via Command Arguments
+    # 6. Dynamic Configuration via Command Arguments
     # Injects parameters directly into the command line arguments using 'set --'.
     # We must specify --user=mysql to avoid the "run as root" error
     # --bind-address=0.0.0.0 allows connections from other containers
     set -- "$@" --user=mysql --bind-address=0.0.0.0 --port="$MARIADB_PORT"
 fi
 
-# 6. Execute the command from CMD
+# 7. Execute the command from CMD
 # 'exec' replaces the shell with the MariaDB process so it becomes PID 1.
 # This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec "$@"

@@ -9,7 +9,7 @@ if [ "$1" = "haproxy" ]; then
     # 1. Fail-fast validation
     # Ensures the mandatory HAPROXY_PORT is set before proceeding
     if [ -z "$HAPROXY_PORT" ]; then
-        echo "Error: HAPROXY_PORT environment variable is missing." >&2
+        echo "Error: Missing HAPROXY_PORT environment variable." >&2
         exit 1
     fi
 

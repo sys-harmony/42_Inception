@@ -7,24 +7,20 @@ set -e
 if [ "$1" = "./arcane" ]; then
 
     # 1. Fetch secrets from Docker secret mount points
-    ENCRYPTION_KEY=$(cat /run/secrets/arc_encryption_key)
-    JWT_SECRET=$(cat /run/secrets/arc_jwt_secret)
+    ARC_ENCRYPTION_KEY=$(cat /run/secrets/arc_encryption_key)
+    ARC_JWT_SECRET=$(cat /run/secrets/arc_jwt_secret)
 
     # 2. Fail-fast validation
     # Check for secrets and mandatory environment variables
-    if [ -z "$ENCRYPTION_KEY" ] || [ -z "$JWT_SECRET" ]; then
-        echo "Error: Arcane secrets (encryption key or JWT secret) are missing." >&2
-        exit 1
-    fi
-
-    if [ -z "$PORT" ]; then
-        echo "Error: ARCANE_PORT (mapped to PORT) environment variable is missing." >&2
+    if [ -z "$ARCANE_PORT" ] || [ -z "$ARC_ENCRYPTION_KEY" ] || [ -z "$ARC_JWT_SECRET" ]; then
+        echo "Error: Missing ARCANE_PORT environment variable, ARC_ENCRYPTION_KEY and/or ARC_JWT_SECRET secret(s)." >&2
         exit 1
     fi
 
     # 3. Export secrets to environment for the application
-    export ENCRYPTION_KEY
-    export JWT_SECRET
+    export PORT="$ARCANE_PORT"
+    export ENCRYPTION_KEY="$ARC_ENCRYPTION_KEY"
+    export JWT_SECRET="$ARC_JWT_SECRET"
 
     # 4. Configures the Docker client to talk to HAProxy instead of the local socket
     if [ -n "$HAPROXY_HOST" ]; then

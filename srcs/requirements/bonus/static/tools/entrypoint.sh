@@ -9,7 +9,7 @@ if [ "$1" = "lighttpd" ]; then
     # 1. Fail-fast validation
     # Ensures the mandatory STATIC_PORT is set before proceeding
     if [ -z "$STATIC_PORT" ]; then
-        echo "Error: STATIC_PORT environment variable is missing." >&2
+        echo "Error: Missing STATIC_PORT environment variable." >&2
         exit 1
     fi
 

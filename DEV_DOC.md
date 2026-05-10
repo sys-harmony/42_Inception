@@ -36,7 +36,6 @@ Before building the project, you must manually set up the required configuration
    ```
 
    And fill it with your specific values.
-
 2. **Secrets:**
    Create a `secrets/` directory at the root of the project. Inside, create the following text files containing only the respective passwords/keys:
    * `db_password.txt`
@@ -52,19 +51,23 @@ Before building the project, you must manually set up the required configuration
 The project is orchestrated using a `Makefile` situated at the root directory.
 
 ### Build & Launch
-* `make` or `make all`: Creates the necessary local directories for persistent storage (`/home/gdosch/data/...`), builds all Docker images using `docker compose build`, and starts the containers in detached mode.
-* `make build`: Only builds the images.
+* `make` or `make all`: Automated sequence that prepares directories, builds Docker images, and starts containers in detached mode.
+* `make prepare`: Creates the necessary local directories for persistent storage (`/home/gdosch/data/...`).
+* `make build`: Builds the Docker images using `docker compose build`.
 * `make up`: Starts the existing containers in the background.
+
+### Maintenance
+* `make restart`: Stops, rebuilds, and restarts the services using existing cache.
+* `make rebuild`: Rebuilds the Docker images from scratch without using cache.
+* `make re`: Full stack rebuild: stops services, rebuilds everything without cache, and restarts.
 
 ### Database Access
 * `make mariadb`: Opens an interactive MariaDB shell as root inside the database container for manual queries and verification.
 
-### Cleanup & Maintenance
+### Cleanup
 * `make down`: Stops and removes the containers and the default network. Volumes are preserved.
 * `make clean`: Executes `make down` and runs `docker system prune -f` to clean up dangling resources (stopped containers, dangling networks).
-* `make fclean`: Executes a complete wipe with safeguards. It removes all containers, networks, volumes, and images (`--rmi all`), clears the entire Docker cache, and verifies `DATA_PATH` safety before forcefully deleting local data directories (`sudo rm -rf /home/gdosch/data`). This prevents accidental system damage from misconfiguration.
-* `make re`: Executes `make fclean` followed by `make all` for a complete fresh rebuild from scratch.
-* `make mariadb`: Opens an interactive MariaDB shell as root inside the database container for manual queries and verification.
+* `make fclean`: Deep clean. It removes all containers, networks, volumes, and images (`--rmi all`) and clears the entire Docker cache. It then interactively prompts you before forcefully deleting the host's local data directories (`sudo rm -rf /home/gdosch/data`), acting as a safeguard to prevent accidental system damage.
 
 ## Relevant Docker Commands
 While the `Makefile` automates the general workflow, you may need to use native Docker commands for deeper debugging and monitoring. Run these commands from the root of the project (where the `docker-compose.yml` is located):
@@ -108,7 +111,7 @@ Data is stored on the host machine to remain independent of the container's life
 
 ### Lifecycle of Data
 * `make down` / `make clean`: Containers are stopped/removed, but data persists in the host folders.
-* `make fclean`: This is a destructive command. It explicitly removes the host data directories to allow a true "from scratch" installation. This is intended for development resets or project submission cleanup.
+* `make fclean`: This is a destructive command. It explicitly removes the host data directories to allow a true "from scratch" installation (requires user confirmation). This is intended for development resets or project submission cleanup.
 
 ## Full Project Tutorial
 This comprehensive guide details every step required to recreate the entire Inception infrastructure from scratch, from the initial virtual machine setup to the final container deployment.

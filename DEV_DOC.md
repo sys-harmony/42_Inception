@@ -2495,9 +2495,10 @@ if [ "$1" = "haproxy" ]; then
 
     # 2. Dynamic Port Configuration
     # Injects the dynamic port into the haproxy.cfg bind instruction.
-    # This allows the socket proxy to adapt to .env changes without image rebuilds.
+    # We use a regex '[0-9]*' instead of hardcoding '2375' to ensure idempotency.
+    # This allows the container to restart successfully without failing the substitution.
     echo "Configuring HAProxy to listen on port: $HAPROXY_PORT"
-    sed -i "s/bind \*:2375/bind \*:${HAPROXY_PORT}/" /usr/local/etc/haproxy/haproxy.cfg
+    sed -i "s/bind \*:[0-9]*/bind \*:${HAPROXY_PORT}/" /usr/local/etc/haproxy/haproxy.cfg
 fi
 
 # 3. Execute the command from CMD
@@ -2533,7 +2534,7 @@ defaults
     option httplog
 
 frontend docker-api
-    # Listens on all interfaces on port 2375 (default Docker TCP port).
+    # Listens on all interfaces on the port dynamically injected by the entrypoint.
     bind *:2375
     
     # --- ACLs: define what Arcane is allowed to reach ---
@@ -2541,6 +2542,9 @@ frontend docker-api
     # Safe read-only endpoints (no writes, no registry lookups)
     acl is_read_only path_reg ^/(v[0-9.]+/)?(version|info|_ping|events|images/json|containers/json|networks|volumes)$
     
+    # Detailed container inspection (Required for Arcane to view logs, stats, and details)
+    acl is_container_inspect path_reg ^/(v[0-9.]+/)?containers/[a-zA-Z0-9_.:-]+/(json|logs|stats|top)$
+
     # Container lifecycle control — no DELETE
     acl is_container_action path_reg ^/(v[0-9.]+/)?containers/[a-zA-Z0-9_.:-]+/(start|stop|restart|kill|attach|wait)$
 
@@ -2553,6 +2557,7 @@ frontend docker-api
     # --- Rules: deny > allow > deny all (zero-trust) ---
     http-request deny if forbidden_paths
     http-request allow if is_read_only
+    http-request allow if is_container_inspect
     http-request allow if is_container_action
     http-request allow if is_exec
     http-request deny 
@@ -2561,13 +2566,34 @@ frontend docker-api
     default_backend docker-socket
 
 backend docker-socket
-    # 'unix@' tells HAProxy to use a Unix socket instead of TCP
-    server docker unix@/var/run/docker.sock check
+    # 'unix@' tells HAProxy to use a Unix socket instead of TCP.
+    # Note: The 'check' option is omitted here because health checks on Docker Unix sockets
+    # require specific HTTP probes, otherwise HAProxy might falsely mark the backend as DOWN.
+    server docker unix@/var/run/docker.sock
 ```
 
-Next, let's update Arcane's `entrypoint.sh` script to route its Docker API calls through our new proxy instead of the default local socket. By setting the `DOCKER_HOST` environment variable, we instruct the Docker client inside Arcane to communicate strictly over TCP with HAProxy. Replace the end of the file, starting from the secrets export section, with the following code:
+Next, let's update Arcane's `entrypoint.sh` script to route its Docker API calls through our new proxy instead of the default local socket. By setting the `DOCKER_HOST` environment variable, we instruct the Docker client inside Arcane to communicate strictly over TCP with HAProxy. Replace the file content with the following:
 
 ```sh
+#!/bin/sh
+
+# Stops the script immediately if any command fails
+set -e
+
+# Only run setup logic if the command passed is './arcane'
+if [ "$1" = "./arcane" ]; then
+
+    # 1. Fetch secrets from Docker secret mount points
+    ARC_ENCRYPTION_KEY=$(cat /run/secrets/arc_encryption_key)
+    ARC_JWT_SECRET=$(cat /run/secrets/arc_jwt_secret)
+
+    # 2. Fail-fast validation
+    # Check for secrets and mandatory environment variables
+    if [ -z "$ARCANE_PORT" ] || [ -z "$ARC_ENCRYPTION_KEY" ] || [ -z "$ARC_JWT_SECRET" ]; then
+        echo "Error: Missing ARCANE_PORT environment variable, ARC_ENCRYPTION_KEY and/or ARC_JWT_SECRET secret(s)." >&2
+        exit 1
+    fi
+
     # 3. Export secrets to environment for the application
     export PORT="$ARCANE_PORT"
     export ENCRYPTION_KEY="$ARC_ENCRYPTION_KEY"

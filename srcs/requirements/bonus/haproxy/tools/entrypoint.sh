@@ -15,9 +15,10 @@ if [ "$1" = "haproxy" ]; then
 
     # 2. Dynamic Port Configuration
     # Injects the dynamic port into the haproxy.cfg bind instruction.
-    # This allows the socket proxy to adapt to .env changes without image rebuilds.
+    # We use a regex '[0-9]*' instead of hardcoding '2375' to ensure idempotency.
+    # This allows the container to restart successfully without failing the substitution.
     echo "Configuring HAProxy to listen on port: $HAPROXY_PORT"
-    sed -i "s/bind \*:2375/bind \*:${HAPROXY_PORT}/" /usr/local/etc/haproxy/haproxy.cfg
+    sed -i "s/bind \*:[0-9]*/bind \*:${HAPROXY_PORT}/" /usr/local/etc/haproxy/haproxy.cfg
 fi
 
 # 3. Execute the command from CMD

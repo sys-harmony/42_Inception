@@ -45,9 +45,15 @@ EOF
         touch /var/lib/mysql/.initialized
         echo "MariaDB initialized successfully."
     fi
+
+    # 5. Dynamic Configuration via Command Arguments
+    # Injects parameters directly into the command line arguments using 'set --'.
+    # We must specify --user=mysql to avoid the "run as root" error
+    # --bind-address=0.0.0.0 allows connections from other containers
+    set -- "$@" --user=mysql --bind-address=0.0.0.0 --port="$MARIADB_PORT"
 fi
 
-# 5. Execute the command from CMD
+# 6. Execute the command from CMD
 # 'exec' replaces the shell with the MariaDB process so it becomes PID 1.
 # This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec "$@"

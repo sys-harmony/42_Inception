@@ -21,11 +21,16 @@ RUN chown -R www-data:www-data /var/www/html
 # Set the working directory
 WORKDIR /var/www/html
 
+# Copy the entrypoint script into the container
+COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 # Expose the internal port (default 8080) dynamically injected at build time
 ARG ADMINER_PORT=8080
 EXPOSE ${ADMINER_PORT}
 
+# Set the entrypoint script to handle setup and environment preparation at container start
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
 # Default command executed as PID 1 via the entrypoint's 'exec "$@"'
-# -S 0.0.0.0:${ADMINER_PORT}: Starts the PHP built-in web server on the dynamic port.
-# -t /var/www/html: Sets the document root where Adminer (index.php) is located.
-CMD ["php", "-S", "0.0.0.0:8080", "-t", "/var/www/html"]
+CMD ["php"]

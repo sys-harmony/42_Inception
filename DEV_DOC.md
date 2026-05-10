@@ -508,8 +508,6 @@ services:
     image: mariadb:inception-v1
     container_name: mariadb
     restart: unless-stopped
-    # Overrides the default image command to inject the dynamic port from .env
-    command: ["mariadbd", "--user=mysql", "--bind-address=0.0.0.0", "--port=${MARIADB_PORT}"]
     healthcheck:
       # Verifies DB readiness:
       # - mariadb-admin ping: sends a connection check to the server
@@ -825,10 +823,7 @@ EXPOSE ${MARIADB_PORT}
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Default command executed as PID 1 via the entrypoint's 'exec "$@"'
-# Overridden by docker-compose.yml at runtime to inject dynamic ports.
-# We must specify --user=mysql to avoid the "run as root" error
-# --bind-address=0.0.0.0 allows connections from other containers
-CMD ["mariadbd", "--user=mysql", "--bind-address=0.0.0.0"]
+CMD ["mariadbd"]
 ```
 
 Then, create the `entrypoint.sh` script:
@@ -887,9 +882,15 @@ EOF
         touch /var/lib/mysql/.initialized
         echo "MariaDB initialized successfully."
     fi
+
+    # 5. Dynamic Configuration via Command Arguments
+    # Injects parameters directly into the command line arguments using 'set --'.
+    # We must specify --user=mysql to avoid the "run as root" error
+    # --bind-address=0.0.0.0 allows connections from other containers
+    set -- "$@" --user=mysql --bind-address=0.0.0.0 --port="$MARIADB_PORT"
 fi
 
-# 5. Execute the command from CMD
+# 6. Execute the command from CMD
 # 'exec' replaces the shell with the MariaDB process so it becomes PID 1.
 # This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec "$@"
@@ -1814,8 +1815,7 @@ STATIC_HOST_PORT=8081
 Create the project structure:
 
 ```sh
-mkdir -p \
-    ~/inception/srcs/requirements/bonus/static/{conf,www}
+mkdir -p ~/inception/srcs/requirements/bonus/static/{conf,tools,www}
 ```
 
 Let's create the `Dockerfile` for the static website:
@@ -1858,6 +1858,42 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # -D: don't go to background (foreground mode, essential for Docker)
 # -f: path to the configuration file
 CMD ["lighttpd", "-D", "-f", "/etc/lighttpd/lighttpd.conf"]
+```
+
+The static website also needs an `entrypoint.sh` script:
+
+```sh
+touch ~/inception/srcs/requirements/bonus/static/tools/entrypoint.sh
+```
+
+Copy and paste the following code in it:
+
+```sh
+#!/bin/sh
+
+# Stop the script immediately if any command fails
+set -e
+
+# Only run setup logic if the command passed is 'lighttpd'
+if [ "$1" = "lighttpd" ]; then
+
+    # 1. Fail-fast validation
+    # Ensures the mandatory STATIC_PORT is set before proceeding
+    if [ -z "$STATIC_PORT" ]; then
+        echo "Error: STATIC_PORT environment variable is missing." >&2
+        exit 1
+    fi
+
+    # 2. Dynamic Port Configuration
+    # Updates the Lighttpd server.port value to match the .env configuration.
+    # The regex ensures accuracy even if the container restarts multiple times.
+    echo "Configuring Lighttpd to listen on port: $STATIC_PORT"
+    sed -i "s/^server.port.*/server.port = ${STATIC_PORT}/" /etc/lighttpd/lighttpd.conf
+fi
+
+# 3. Execute the command from CMD
+# 'exec' replaces the shell with the Lighttpd process so it becomes PID 1.
+exec "$@"
 ```
 
 Now, let's create a simple HTML file:
@@ -1974,7 +2010,7 @@ ADMINER_HOST_PORT=8080
 Create the structure:
 
 ```sh
-mkdir -p ~/inception/srcs/requirements/bonus/adminer
+mkdir -p ~/inception/srcs/requirements/bonus/adminer/tools
 ```
 
 We will now create the `Dockerfile`. Adminer doesn't even need local files or entrypoint scripts, we can download it directly when building the image.
@@ -2009,14 +2045,55 @@ RUN chown -R www-data:www-data /var/www/html
 # Set the working directory
 WORKDIR /var/www/html
 
+# Copy the entrypoint script into the container
+COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 # Expose the internal port (default 8080) dynamically injected at build time
 ARG ADMINER_PORT=8080
 EXPOSE ${ADMINER_PORT}
 
+# Set the entrypoint script to handle setup and environment preparation at container start
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
 # Default command executed as PID 1 via the entrypoint's 'exec "$@"'
-# -S 0.0.0.0:${ADMINER_PORT}: Starts the PHP built-in web server on the dynamic port.
-# -t /var/www/html: Sets the document root where Adminer (index.php) is located.
-CMD ["php", "-S", "0.0.0.0:8080", "-t", "/var/www/html"]
+CMD ["php"]
+```
+
+Now it's time to create the `entrypoint.sh` file for Redis:
+
+```sh
+touch ~/inception/srcs/requirements/bonus/adminer/tools/entrypoint.sh
+```
+
+Copy and paste the following configuration in it:
+```sh
+#!/bin/sh
+
+# Stop the script immediately if any command fails
+set -e
+
+# 1. Dynamic Configuration via Command Arguments
+# If the command is 'php', we inject the built-in server parameters.
+if [ "$1" = "php" ]; then
+
+    # 2. Fail-fast validation
+    # Ensures the mandatory ADMINER_PORT is set before proceeding
+    if [ -z "$ADMINER_PORT" ]; then
+        echo "Error: ADMINER_PORT environment variable is missing." >&2
+        exit 1
+    fi
+
+    # 3. Arguments Injection
+    # -S 0.0.0.0:${ADMINER_PORT}: Starts the PHP built-in web server on the dynamic port.
+    # -t /var/www/html: Sets the document root where Adminer (index.php) is located.
+    echo "Starting Adminer on port: $ADMINER_PORT"
+    set -- "$@" "-S" "0.0.0.0:${ADMINER_PORT}" "-t" "/var/www/html"
+fi
+
+# 4. Execute the command from CMD
+# 'exec' replaces the shell with the PHP process so it becomes PID 1.
+exec "$@"
 ```
 
 We must update the `docker-compose.yml` file and add the Adminer service. We map it to port 8080. It needs to be on the inception network to communicate with the MariaDB container. Type:
@@ -2033,11 +2110,11 @@ services:
     image: adminer:inception-v1
     container_name: adminer
     restart: unless-stopped
-    # Overrides the default image command to inject the dynamic port from .env
-    command: ["php", "-S", "0.0.0.0:${ADMINER_PORT}", "-t", "/var/www/html"]
     depends_on:
       mariadb:
         condition: service_healthy
+    environment:
+      - ADMINER_PORT=${ADMINER_PORT}
     networks:
       - inception
     ports:
@@ -2155,12 +2232,31 @@ set -e
 # Only run setup logic if the command passed is './arcane'
 if [ "$1" = "./arcane" ]; then
 
-    # 1. Loads secrets into environment variables
-    export ENCRYPTION_KEY=$(cat /run/secrets/arc_encryption_key)
-    export JWT_SECRET=$(cat /run/secrets/arc_jwt_secret)
+    # 1. Fetch secrets from Docker secret mount points
+    # These are mandatory for Arcane's internal encryption and session management
+    ENCRYPTION_KEY=$(cat /run/secrets/arc_encryption_key)
+    JWT_SECRET=$(cat /run/secrets/arc_jwt_secret)
+
+    # 2. Fail-fast validation
+    # Check for secrets and mandatory environment variables
+    if [ -z "$ENCRYPTION_KEY" ] || [ -z "$JWT_SECRET" ]; then
+        echo "Error: Arcane secrets (encryption key or JWT secret) are missing." >&2
+        exit 1
+    fi
+
+    if [ -z "$PORT" ]; then
+        echo "Error: ARCANE_PORT (mapped to PORT) environment variable is missing." >&2
+        exit 1
+    fi
+
+    # 3. Export secrets to environment for the application
+    export ENCRYPTION_KEY
+    export JWT_SECRET
+
+    echo "Starting Arcane using local Docker socket..."
 fi
 
-# 2. Execute the command from CMD
+# 4. Execute the command from CMD
 # 'exec' replaces the shell with the Arcane process so it becomes PID 1.
 # This ensures it receives SIGTERM signals directly for a clean shutdown.
 exec "$@"
@@ -2228,7 +2324,7 @@ While Arcane is now up and running, it currently has unrestricted read and write
 
 Let's create the structure:
 ```sh
-mkdir -p ~/inception/srcs/requirements/bonus/haproxy/conf
+mkdir -p ~/inception/srcs/requirements/bonus/haproxy/{conf,tools}
 ```
 
 Add these configuration variables to your .env file:
@@ -2274,6 +2370,43 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # By default, HAProxy runs in the foreground unless '-D' is specified, 
 # ensuring the container remains active and manageable by Docker.
 CMD ["haproxy", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+```
+
+The socket proxy service also needs an `entrypoint.sh` script:
+
+```sh
+touch ~/inception/srcs/requirements/bonus/haproxy/tools/entrypoint.sh
+```
+
+Copy and paste the following code in it:
+
+```sh
+#!/bin/sh
+
+# Stop the script immediately if any command fails
+set -e
+
+# Only run setup logic if the command passed is 'haproxy'
+if [ "$1" = "haproxy" ]; then
+
+    # 1. Fail-fast validation
+    # Ensures the mandatory HAPROXY_PORT is set before proceeding
+    if [ -z "$HAPROXY_PORT" ]; then
+        echo "Error: HAPROXY_PORT environment variable is missing." >&2
+        exit 1
+    fi
+
+    # 2. Dynamic Port Configuration
+    # Injects the dynamic port into the haproxy.cfg bind instruction.
+    # This allows the socket proxy to adapt to .env changes without image rebuilds.
+    echo "Configuring HAProxy to listen on port: $HAPROXY_PORT"
+    sed -i "s/bind \*:2375/bind \*:${HAPROXY_PORT}/" /usr/local/etc/haproxy/haproxy.cfg
+fi
+
+# 3. Execute the command from CMD
+# 'exec' replaces the shell with the HAProxy process so it becomes PID 1.
+# This ensures it receives SIGTERM signals directly for a clean shutdown.
+exec "$@"
 ```
 
 Then, create the `haproxy.cfg` configuration file:
@@ -2335,16 +2468,27 @@ backend docker-socket
     server docker unix@/var/run/docker.sock check
 ```
 
-Next, let's update Arcane's `entrypoint.sh` script to route its Docker API calls through our new proxy instead of the default local socket. By setting the `DOCKER_HOST` environment variable, we instruct the Docker client inside Arcane to communicate strictly over TCP with HAProxy. Insert the following conditional block right after loading the secrets, and just before the exec command:
+Next, let's update Arcane's `entrypoint.sh` script to route its Docker API calls through our new proxy instead of the default local socket. By setting the `DOCKER_HOST` environment variable, we instruct the Docker client inside Arcane to communicate strictly over TCP with HAProxy. Replace the end of the file, starting from the secrets loading section, with the following code:
 
 ```sh
-    # 2. Configures the Docker client to talk to HAProxy instead of the local socket
+    # 3. Export secrets to environment for the application
+    export ENCRYPTION_KEY
+    export JWT_SECRET
+
+    # 4. Configures the Docker client to talk to HAProxy instead of the local socket
     if [ -n "$HAPROXY_HOST" ]; then
+        if [ -z "$HAPROXY_PORT" ]; then
+            echo "Error: HAPROXY_HOST is set but HAPROXY_PORT is missing." >&2
+            exit 1
+        fi
+        echo "Routing Docker traffic through HAProxy at ${HAPROXY_HOST}:${HAPROXY_PORT}"
         export DOCKER_HOST="tcp://${HAPROXY_HOST}:${HAPROXY_PORT}"
     fi
 fi
 
-# 3. Execute the command from CMD
+# 5. Execute the command from CMD
+# 'exec' replaces the shell with the Arcane process so it becomes PID 1.
+exec "$@"
 ```
 
 It is now time to update the `docker-compose.yml` file to reflect this architectural shift. We need to do three things:

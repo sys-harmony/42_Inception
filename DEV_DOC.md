@@ -2468,7 +2468,7 @@ backend docker-socket
     server docker unix@/var/run/docker.sock check
 ```
 
-Next, let's update Arcane's `entrypoint.sh` script to route its Docker API calls through our new proxy instead of the default local socket. By setting the `DOCKER_HOST` environment variable, we instruct the Docker client inside Arcane to communicate strictly over TCP with HAProxy. Replace the end of the file, starting from the secrets loading section, with the following code:
+Next, let's update Arcane's `entrypoint.sh` script to route its Docker API calls through our new proxy instead of the default local socket. By setting the `DOCKER_HOST` environment variable, we instruct the Docker client inside Arcane to communicate strictly over TCP with HAProxy. Replace the end of the file, starting from the secrets export section, with the following code:
 
 ```sh
     # 3. Export secrets to environment for the application

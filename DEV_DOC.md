@@ -604,7 +604,7 @@ services:
       # - --spider: runs in web-crawler mode (checks page existence without downloading).
       # - https://localhost:443: explicitly targets the encrypted connection on NGINX default HTTPS port.
       # - || exit 1: triggers an 'unhealthy' status if the request fails or times out.
-      test: ["CMD-SHELL", "wget --no-check-certificate --spider https://localhost:${NGINX_PORT} || exit 1"]
+      test: ["CMD-SHELL", "wget --no-check-certificate --spider https://localhost:${NGINX_PORT}/readme.html || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5

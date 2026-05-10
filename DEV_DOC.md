@@ -52,7 +52,6 @@ The project is orchestrated using a `Makefile` situated at the root directory.
 
 ### Build & Launch
 * `make` or `make all`: Automated sequence that prepares directories, builds Docker images, and starts containers in detached mode.
-* `make prepare`: Creates the necessary local directories for persistent storage (`/home/gdosch/data/...`).
 * `make build`: Builds the Docker images using `docker compose build`.
 * `make up`: Starts the existing containers in the background.
 

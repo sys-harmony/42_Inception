@@ -13,8 +13,9 @@ COPY conf/haproxy.cfg /usr/local/etc/haproxy/haproxy.cfg
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose the proxy port
-EXPOSE 2375
+# Expose the internal port (default 2375) dynamically injected at build time
+ARG HAPROXY_PORT=2375
+EXPOSE ${HAPROXY_PORT}
 
 # Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

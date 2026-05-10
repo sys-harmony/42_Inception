@@ -19,8 +19,9 @@ RUN chown -R www-data:www-data /var/www/html
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose port 80 (internal container port)
-EXPOSE 80
+# Expose the internal port (default 80) dynamically injected at build time
+ARG STATIC_PORT=80
+EXPOSE ${STATIC_PORT}
 
 # Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

@@ -10,8 +10,9 @@ RUN apt-get update && apt-get install -y \
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose the default Redis port
-EXPOSE 6379
+# Expose the internal port (default 6379) dynamically injected at build time
+ARG REDIS_PORT=6379
+EXPOSE ${REDIS_PORT}
 
 # Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

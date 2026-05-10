@@ -30,9 +30,10 @@ WORKDIR /var/www/html
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose the default PHP-FPM port (Documentation purpose only)
+# Expose the internal port (default 9000) dynamically injected at build time
 # The actual listening port is dynamically injected at runtime via the entrypoint.sh script
-EXPOSE 9000
+ARG WP_PORT=9000
+EXPOSE ${WP_PORT}
 
 # Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

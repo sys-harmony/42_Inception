@@ -1,26 +1,36 @@
 DATA_PATH = /home/gdosch/data
 COMPOSE_FILE = srcs/docker-compose.yml
 
-.PHONY: all build up down mariadb clean fclean re
+.PHONY: all prepare build rebuild up down restart re mariadb clean fclean
 
-all: up
+all: build up
 
-# Create local storage directories and build images
-build:
+# Create host directories for persistent data storage
+prepare:
 	@mkdir -p $(DATA_PATH)/mariadb $(DATA_PATH)/wordpress $(DATA_PATH)/arcane
+
+# Build Docker images
+build: prepare
 	docker compose -f $(COMPOSE_FILE) build
 
+# Rebuild images from scratch
+rebuild: prepare
+	docker compose -f $(COMPOSE_FILE) build --no-cache
+
 # Start the containers
-up: build
+up:
     # -d : Detached mode. Run containers in the background and return control to the terminal.
 	docker compose -f $(COMPOSE_FILE) up -d
 
-# Stop the containers
+# Stop all services and remove containers
 down:
 	docker compose -f $(COMPOSE_FILE) down
 
-# Restart the containers (useful to apply new .env configurations)
-restart: down up
+# Restart service using existing cache
+restart: down build up
+
+# Full stack rebuild without cache
+re: down rebuild up
 
 # Access the database command line
 mariadb:
@@ -60,6 +70,3 @@ fclean:
 	else \
 		echo "Persistent data preserved."; \
 	fi
-
-# Complete rebuild from scratch
-re: fclean all

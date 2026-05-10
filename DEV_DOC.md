@@ -31,7 +31,7 @@ Before building the project, you must manually set up the required configuration
 1. **Environment Variables:**
    Copy the provided `.env.example` file to create your own `.env` file inside the `srcs/` directory:
 
-   ```bash
+   ```sh
    cp srcs/.env.example srcs/.env
    ```
 
@@ -176,17 +176,17 @@ When the installation is complete, click **Continue** to reboot.
 After rebooting, log in using the username and password provided earlier. Once logged in (`yourlogin@inception:~$`):
 
 1. Switch to the superuser (root):
-   ```bash
+   ```sh
    su -
    ```
    Don’t forget the hyphen, it is important, and enter your root account password.
 
 2. Install the `sudo` utility:
-   ```bash
+   ```sh
    apt update && apt install sudo
    ```
 3. Add your user to the administrators group:
-   ```bash
+   ```sh
    usermod -aG sudo yourlogin
    ```
 
@@ -201,7 +201,7 @@ Choose between **Bridged Adapter** and **NAT** and :
 
     Find the VM's IP:
 
-    ```bash
+    ```sh
     hostname -I
     ```
 
@@ -220,7 +220,7 @@ Choose between **Bridged Adapter** and **NAT** and :
 
 Now, restart the VM:
 
-```bash
+```sh
 reboot
 ```
 
@@ -295,7 +295,7 @@ Then, edit the local SSH configuration file:
 
     > ⚠️ **Be careful:** generating a new SSH key can overwrite an existing one if you are not attentive to the file location, so make sure you know what you are doing before proceeding. If you don’t have an SSH key yet, you first need to create one. In your physical computer’s terminal (not the VM), run:
 
-    ```bash
+    ```sh
     ssh-keygen -t rsa -b 4096
     ```
 
@@ -324,7 +324,7 @@ Then, edit the local SSH configuration file:
 We will also need to modify the `/etc/hosts` file so that your domain name (`yourlogin.42.fr`) correctly resolves to your virtual machine. This allows your system to redirect requests for the domain to the right IP address, whether you are using a browser or tools like VSCode and SSH.
 
 Open your host's `/etc/hosts` file (with `sudo`):
-```bash
+```sh
 sudo nano /etc/hosts
 ```
 
@@ -351,24 +351,24 @@ Add the following line based on your mode:
 Open the VSCode integrated terminal (`Ctrl+J`) directly inside the VM and install Docker using the official repository:
 
 Add Docker's official GPG key:
-```bash
+```sh
 sudo apt update && sudo apt install ca-certificates curl
 ```
 
-```bash
+```sh
 sudo install -m 0755 -d /etc/apt/keyrings
 ```
 
-```bash
+```sh
 sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
 ```
 
-```bash
+```sh
 sudo chmod a+r /etc/apt/keyrings/docker.asc
 ```
 
 Add the repository to Apt sources:
-```bash
+```sh
 sudo tee /etc/apt/sources.list.d/docker.sources <<EOF
 Types: deb
 URIs: https://download.docker.com/linux/debian
@@ -380,14 +380,14 @@ EOF
 ```
 
 Install Docker:
-```bash
+```sh
 sudo apt update && sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 
 The Docker service starts automatically after installation. To verify that Docker is running, use: `sudo systemctl status docker` and `docker compose version`.
 
 To use Docker without `sudo`:
-```bash
+```sh
 sudo usermod -aG docker yourlogin
 ```
 *(You may need to log out and log back in for this to take effect.)*
@@ -404,7 +404,7 @@ We will now create the project directory structure.
 
 Create the necessary folders:
 
-```bash
+```sh
 mkdir -p \
     ~/inception/srcs/requirements/mariadb/tools \
     ~/inception/srcs/requirements/nginx/{conf,tools} \
@@ -413,29 +413,36 @@ mkdir -p \
     ~/inception/secrets
 ```
 
-Secure the repository by ignoring secrets and `.env`:
-```bash
-cat << 'EOF' > ~/inception/.gitignore
+It's time to secure the repository by ignoring the secrets and the `.env` file. Create the `.gitignore` file:
+```sh
+touch ~/inception/.gitignore
+```
+
+And copy the following in it:
+```gitignore
 # Ignore the secrets directory (passwords)
 secrets/
 
 # Ignore the environment file(s) (variables)
 .env
-EOF
 ```
 
-To create the `.env` file in `srcs` with the following configuration, type:
-```bash
-cat << 'EOF' > ~/inception/srcs/.env
+Now, create the `.env` file inside the `srcs` directory:
+```sh
+touch ~/inception/srcs/.env
+```
+
+Paste the following configuration, ensuring you replace `yourlogin` with **your actual 42 username**:
+```sh
 DOMAIN_NAME=yourlogin.42.fr
 
-# MARIADB SETUP
+# MARIADB
 MARIADB_HOST=mariadb
 MARIADB_PORT=3306
 MARIADB_DATABASE=wordpress
 MARIADB_USER=yourlogin
 
-# WORDPRESS SETUP
+# WORDPRESS
 WP_VERSION=6.9.4
 WP_TITLE=Inception
 WP_PORT=9000
@@ -444,33 +451,30 @@ WP_ADMIN_EMAIL=yourlogin@student.42.fr
 WP_USER=visitor
 WP_USER_EMAIL=visitor@student.42.fr
 
-# NGINX SETUP
+# NGINX
 NGINX_PORT=443
 NGINX_HOST_PORT=443
-EOF
 ```
-
-Make sure to replace `yourlogin` with your actual 42 username.
 
 While `.env` files are often used to store sensitive data, security best practices recommend keeping critical settings (i.e. passwords, keys and tokens) into dedicated secret files. Replace the values in quotes with passwords of your choice securely in `~/inception/secrets/`:
 
-```bash
+```sh
 cd ~/inception/secrets
 ```
 
-```bash
+```sh
 echo -n "your_db_password" > db_password.txt
 ```
 
-```bash
+```sh
 echo -n "your_db_root_password" > db_root_password.txt
 ```
 
-```bash
+```sh
 echo -n "your_wp_admin_password" > wp_admin_password.txt
 ```
 
-```bash
+```sh
 echo -n "your_wp_user_password" > wp_user_password.txt
 ```
 
@@ -499,6 +503,8 @@ services:
   mariadb:
     build:
       context: ./requirements/mariadb
+      args:
+        - MARIADB_PORT=${MARIADB_PORT}
     image: mariadb:inception-v1
     container_name: mariadb
     restart: unless-stopped
@@ -535,6 +541,8 @@ services:
   wordpress:
     build:
       context: ./requirements/wordpress
+      args:
+        - WP_PORT=${WP_PORT}
     image: wordpress:inception-v1
     container_name: wordpress
     restart: unless-stopped
@@ -580,6 +588,8 @@ services:
   nginx:
     build:
       context: ./requirements/nginx
+      args:
+        - NGINX_PORT=${NGINX_PORT}
     image: nginx:inception-v1
     container_name: nginx
     restart: unless-stopped
@@ -685,7 +695,7 @@ volumes:
 
 Now, create the `Makefile`:
 
-```bash
+```sh
 touch ~/inception/Makefile
 ```
 
@@ -695,45 +705,63 @@ And copy the following into it and make sure to use actual Tabs instead of space
 DATA_PATH = /home/yourlogin/data
 COMPOSE_FILE = srcs/docker-compose.yml
 
-.PHONY: all build up down mariadb clean fclean re
+.PHONY: all prepare build rebuild up down restart re mariadb clean fclean
 
-all: up
+all: build up
 
-# Create local storage directories and build images
-build:
+# Create host directories for persistent data storage
+prepare:
 	@mkdir -p $(DATA_PATH)/mariadb $(DATA_PATH)/wordpress
+
+# Build Docker images
+build: prepare
 	docker compose -f $(COMPOSE_FILE) build
 
-# Start containers in detached mode
-up: build
+# Rebuild images from scratch
+rebuild: prepare
+	docker compose -f $(COMPOSE_FILE) build --no-cache
+
+# Start the containers
+up:
+    # -d : Detached mode. Run containers in the background and return control to the terminal.
 	docker compose -f $(COMPOSE_FILE) up -d
 
-# Stop running containers
+# Stop all services and remove containers
 down:
 	docker compose -f $(COMPOSE_FILE) down
 
-# Restart the containers (useful to apply new .env configurations)
-restart: down up
+# Restart service using existing cache
+restart: down build up
+
+# Full stack rebuild without cache
+re: down rebuild up
 
 # Access the database command line
 mariadb:
+    # -i : Interactive, keep STDIN open so you can type the password
+    # -t : Allocate a pseudo-TTY (gives you a real terminal interface)
+    # -u root : Connect as root user to MariaDB
+    # -p : Prompt for the password
 	docker exec -it mariadb mariadb -u root -p
 
 # Standard cleanup: removes stopped containers and dangling resources (cache, networks)
 clean: down
+    # -f : Force. Do not prompt for confirmation
 	@docker system prune -f
 
-# Full cleanup: total wipe of the Docker environment and local data
+# Deep clean: total removal of the Docker environment
 fclean: 
-#   Removes all containers, networks, volumes, and images defined in the project
+    # -v        : Remove named volumes declared in the volumes section of the Compose file
+    # --rmi all : Remove all images built or downloaded by this compose file
 	docker compose -f $(COMPOSE_FILE) down -v --rmi all
 
-#   Deep clean: removes all unused images and entire build cache (including non-dangling)
+    # -a : All. Remove all unused images, not just dangling ones, and entire build cache
+    # -f : Force. Do not prompt for confirmation
 	@docker system prune -af
 
-#	Interactive prompt for persistent data
-#   Ensures DATA_PATH is set and is not the root directory to prevent system damage
-#   Requires sudo password to securely delete persistent data from the host
+    # Interactive prompt for persistent data
+    # Ensures DATA_PATH is set and is not the root directory to prevent system damage
+    # Requires sudo password to securely delete persistent data from the host
 	@echo "All Docker containers, networks, volumes, images and cache were deleted."
 	@read -p "Would you like to wipe the persistent data too? [y/N] " ans && if [ "$$ans" = "y" ] || [ "$$ans" = "Y" ]; then \
 		if [ -z "$(DATA_PATH)" ] || [ "$(DATA_PATH)" = "/" ]; then \
@@ -746,9 +774,6 @@ fclean:
 	else \
 		echo "Persistent data preserved."; \
 	fi
-
-# Complete rebuild from scratch
-re: fclean all
 ```
 
 https://docs.docker.com/compose/intro/compose-application-model/
@@ -764,7 +789,7 @@ The configuration files (`Dockerfile`, `entrypoint.sh`, `nginx.conf`, etc.) need
 
 Create the `Dockerfile`:
 
-```bash
+```sh
 touch ~/inception/srcs/requirements/mariadb/Dockerfile
 ```
 
@@ -791,9 +816,10 @@ RUN mkdir -p /var/lib/mysql /run/mysqld && \
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose the default MariaDB port (Documentation purpose only)
+# Expose the internal port (default 3306) dynamically injected at build time
 # The actual listening port is dynamically injected at runtime via the docker-compose.yml file
-EXPOSE 3306
+ARG MARIADB_PORT=3306
+EXPOSE ${MARIADB_PORT}
 
 # Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
@@ -807,13 +833,13 @@ CMD ["mariadbd", "--user=mysql", "--bind-address=0.0.0.0"]
 
 Then, create the `entrypoint.sh` script:
 
-```bash
+```sh
 touch ~/inception/srcs/requirements/mariadb/tools/entrypoint.sh
 ```
 
 And copy the following in it:
 
-```bash
+```sh
 #!/bin/sh
 
 # Stop the script immediately if any command fails
@@ -873,7 +899,7 @@ exec "$@"
 
 Create the `Dockerfile`:
 
-```bash
+```sh
 touch ~/inception/srcs/requirements/wordpress/Dockerfile
 ```
 
@@ -912,9 +938,10 @@ WORKDIR /var/www/html
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose the default PHP-FPM port (Documentation purpose only)
+# Expose the internal port (default 9000) dynamically injected at build time
 # The actual listening port is dynamically injected at runtime via the entrypoint.sh script
-EXPOSE 9000
+ARG WP_PORT=9000
+EXPOSE ${WP_PORT}
 
 # Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
@@ -927,13 +954,13 @@ CMD ["php-fpm8.2", "-F"]
 
 Create the `entrypoint.sh` script:
 
-```bash
+```sh
 touch ~/inception/srcs/requirements/wordpress/tools/entrypoint.sh
 ```
 
 And copy the following in it:
 
-```bash
+```sh
 #!/bin/sh
 
 # Stop the script immediately if any command fails
@@ -1073,7 +1100,7 @@ exec "$@"
 
 Create the `Dockerfile`:
 
-```bash
+```sh
 touch ~/inception/srcs/requirements/nginx/Dockerfile
 ```
 
@@ -1098,9 +1125,10 @@ COPY conf/nginx.conf /etc/nginx/nginx.conf
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose the default NGINX port (Documentation purpose only)
+# Expose the internal port (default 443) dynamically injected at build time
 # The actual listening port is dynamically injected at runtime via the entrypoint.sh script
-EXPOSE 443
+ARG NGINX_PORT=443
+EXPOSE ${NGINX_PORT}
 
 # Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
@@ -1112,13 +1140,13 @@ CMD ["nginx", "-g", "daemon off;"]
 
 Create the `entrypoint.sh` script:
 
-```bash
+```sh
 touch ~/inception/srcs/requirements/nginx/tools/entrypoint.sh
 ```
 
 And copy the following in it:
 
-```bash
+```sh
 #!/bin/sh
 
 # Stop the script immediately if any command fails
@@ -1168,7 +1196,7 @@ exec "$@"
 
 NGINX also needs a `nginx.conf` file:
 
-```bash
+```sh
 touch ~/inception/srcs/requirements/nginx/conf/nginx.conf
 ```
 
@@ -1211,6 +1239,9 @@ http {
         # The server name (domain) will be dynamically replaced by the entrypoint script
         server_name __DOMAIN_NAME__;
 
+        # Disable absolute redirects (e.g. /wp-admin to /wp-admin/) to preserve HOST_PORT 
+        absolute_redirect off;
+
         # SSL Configuration
         ssl_certificate /etc/nginx/ssl/__DOMAIN_NAME__.crt;
         ssl_certificate_key /etc/nginx/ssl/__DOMAIN_NAME__.key;
@@ -1242,6 +1273,9 @@ http {
             # Include standard FastCGI parameters
             include fastcgi_params;
             
+            # Pass the original Host header and port to PHP to ensure correct URL generation
+            fastcgi_param HTTP_HOST $http_host;
+
             # Explicitly tell PHP which file to execute based on the document root
             fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         }
@@ -1265,7 +1299,7 @@ https://nginx.org/en/docs/beginners_guide.html
 
 Once everything is written and mapped out, run the following commands to install `make` and start the infrastructure:
 
-```bash
+```sh
 sudo apt update && sudo apt install -y make
 cd ~/inception
 make
@@ -1282,7 +1316,7 @@ Your system is now alive! You can access it via your browser (Accept the self-si
 
 ### Bonus 1: REDIS
 Redis is an excellent performance upgrade for your WordPress site. We will now create a secret for it. Type the following and replace `your_redis_password` with a password of your choice:
-```bash
+```sh
 echo -n "your_redis_password" > ~/inception/secrets/redis_password.txt 
 ```
 
@@ -1293,12 +1327,12 @@ REDIS_PORT=6379
 ```
 
 Let's create the structure:
-```bash
+```sh
 mkdir -p ~/inception/srcs/requirements/bonus/redis/tools
 ```
 
 We will now create the Redis `Dockerfile`:
-```bash
+```sh
 touch ~/inception/srcs/requirements/bonus/redis/Dockerfile
 ```
 
@@ -1316,8 +1350,9 @@ RUN apt-get update && apt-get install -y \
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose the default Redis port
-EXPOSE 6379
+# Expose the internal port (default 6379) dynamically injected at build time
+ARG REDIS_PORT=6379
+EXPOSE ${REDIS_PORT}
 
 # Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
@@ -1328,12 +1363,12 @@ CMD ["redis-server"]
 
 Now it's time to create the `entrypoint.sh` file for Redis:
 
-```bash
+```sh
 touch ~/inception/srcs/requirements/bonus/redis/tools/entrypoint.sh
 ```
 
 Copy and paste the following configuration in it:
-```bash
+```sh
 #!/bin/sh
 
 # Stop the script immediately if any command fails
@@ -1394,6 +1429,8 @@ services:
   redis:
     build:
       context: ./requirements/bonus/redis
+      args:
+        - REDIS_PORT=${REDIS_PORT}
     image: redis:inception-v1
     container_name: redis
     restart: unless-stopped
@@ -1427,7 +1464,7 @@ secrets:
 
 The WordPress `entrypoint.sh` file also needs editing. Replace the end of the file, following the secondary account creation, with the following code:
 
-```bash
+```sh
         # 8. Redis Setup (Bonus)
         echo "Configuring Redis Cache with authentication..."
         
@@ -1519,7 +1556,7 @@ Source: https://redis.io/documentation
 FTP (File Transfer Protocol) is a classic bonus with real practical value. It allows you to upload and retrieve files (images, themes, plugins, etc.) directly into your WordPress directory from your physical machine, using a client such as FileZilla. We're going to use **vsftpd** (Very Secure FTP Daemon).
 
 let's start by creating a secret for it:
-```bash
+```sh
 echo -n "your_ftp_password" > ~/inception/secrets/ftp_password.txt
 ```
 
@@ -1534,12 +1571,12 @@ FTP_USER=yourlogin
 ```
 
 Let's create the structure:
-```bash
+```sh
 mkdir -p ~/inception/srcs/requirements/bonus/ftp/{conf,tools}
 ```
 
 We will now create the FTP `Dockerfile`:
-```bash
+```sh
 touch ~/inception/srcs/requirements/bonus/ftp/Dockerfile
 ```
 
@@ -1560,8 +1597,11 @@ COPY conf/vsftpd.conf /etc/vsftpd.conf
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose FTP port and passive mode range
-EXPOSE 21 40000-40005
+# Expose the internal ports (default 21, 40000-40005) dynamically injected at build time
+ARG FTP_PORT=21
+ARG FTP_PASV_MIN_PORT=40000
+ARG FTP_PASV_MAX_PORT=40005
+EXPOSE ${FTP_PORT} ${FTP_PASV_MIN_PORT}-${FTP_PASV_MAX_PORT}
 
 # Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
@@ -1571,7 +1611,7 @@ CMD ["vsftpd", "/etc/vsftpd.conf"]
 ```
 
 Next, let's create the `vsftpd` configuration file:
-```bash
+```sh
 touch ~/inception/srcs/requirements/bonus/ftp/conf/vsftpd.conf
 ```
 
@@ -1601,12 +1641,12 @@ pasv_address=0.0.0.0
 
 **vsftpd** requires a system user to operate. We create it dynamically at runtime with an `entrypoint.sh` file:
 
-```bash
+```sh
 touch ~/inception/srcs/requirements/bonus/ftp/tools/entrypoint.sh
 ```
 
 Copy and paste the following configuration:
-```bash
+```sh
 #!/bin/sh
 
 # Stop the script immediately if any command fails
@@ -1675,6 +1715,10 @@ services:
   ftp:
     build:
       context: ./requirements/bonus/ftp
+      args:
+        - FTP_PORT=${FTP_PORT}
+        - FTP_PASV_MIN_PORT=${FTP_PASV_MIN_PORT}
+        - FTP_PASV_MAX_PORT=${FTP_PASV_MAX_PORT}
     image: ftp:inception-v1
     container_name: ftp
     restart: unless-stopped
@@ -1710,7 +1754,7 @@ It's time to rebuild your infrastructure using `make re` to apply the changes, a
 * **If you chose Bridged mode:**
     You can test it with the following command:
 
-    ```bash
+    ```sh
     curl -u yourlogin:yourpassword ftp://your_vm_ip_address:21/
     ```
 
@@ -1729,24 +1773,24 @@ It's time to rebuild your infrastructure using `make re` to apply the changes, a
 
   Then, you can test it with the following command:
 
-  ```bash
+  ```sh
   curl -u yourlogin:yourpassword ftp://127.0.0.1:2121/
   ```
 
 Alternatively, you can test the connection interactively using the `ftp` client with the following commands:
-  ```bash
+  ```sh
   sudo apt update && sudo apt install -y ftp
   ```
 
 * **If you chose Bridged mode:**
 
-    ```bash
+    ```sh
     ftp your_vm_ip_address 21
     ```
 
 * **If you chose NAT mode:**
 
-    ```bash
+    ```sh
     ftp 127.0.0.1 2121
   ```
 
@@ -1762,21 +1806,21 @@ This bonus consists of a simple static page served by a dedicated webserver cont
 
 Add these configuration variables to your .env file:
 ```env
-# STATIC (LIGHTTPD)
+# STATIC WEBSITE & LIGHTTPD
 STATIC_PORT=80
 STATIC_HOST_PORT=8081
 ```
 
 Create the project structure:
 
-```bash
+```sh
 mkdir -p \
     ~/inception/srcs/requirements/bonus/static/{conf,www}
 ```
 
 Let's create the `Dockerfile` for the static website:
 
-```bash
+```sh
 touch ~/inception/srcs/requirements/bonus/static/Dockerfile
 ```
 
@@ -1803,8 +1847,9 @@ RUN chown -R www-data:www-data /var/www/html
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose port 80 (internal container port)
-EXPOSE 80
+# Expose the internal port (default 80) dynamically injected at build time
+ARG STATIC_PORT=80
+EXPOSE ${STATIC_PORT}
 
 # Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
@@ -1816,7 +1861,7 @@ CMD ["lighttpd", "-D", "-f", "/etc/lighttpd/lighttpd.conf"]
 ```
 
 Now, let's create a simple HTML file:
-```bash
+```sh
 touch ~/inception/srcs/requirements/bonus/static/www/index.html
 ```
 
@@ -1844,7 +1889,7 @@ Copy and paste the following code in it:
 ```
 
 We will now configure the web server, **lighttpd**. Let's start with its configuration file:
-```bash
+```sh
 touch ~/inception/srcs/requirements/bonus/static/conf/lighttpd.conf
 ```
 
@@ -1886,6 +1931,8 @@ services:
   static:
     build:
       context: ./requirements/bonus/static
+      args:
+        - STATIC_PORT=${STATIC_PORT}
     image: static:inception-v1
     container_name: static
     restart: unless-stopped
@@ -1926,13 +1973,13 @@ ADMINER_HOST_PORT=8080
 
 Create the structure:
 
-```bash
+```sh
 mkdir -p ~/inception/srcs/requirements/bonus/adminer
 ```
 
 We will now create the `Dockerfile`. Adminer doesn't even need local files or entrypoint scripts, we can download it directly when building the image.
 
-```bash
+```sh
 touch ~/inception/srcs/requirements/bonus/adminer/Dockerfile
 ```
 
@@ -1941,9 +1988,6 @@ Copy and paste the following code in it:
 ```dockerfile
 # Use Debian Bookworm as the base image for consistency
 FROM debian:12
-
-# Define the version argument (passed from docker-compose.yml)
-ARG ADMINER_VERSION
 
 # Install PHP, the PHP-MySQL extension and wget (to download Adminer)
 RUN apt-get update && apt-get install -y \
@@ -1956,6 +2000,7 @@ RUN mkdir -p /var/www/html
 
 # Download the specific version of Adminer directly into the web directory
 # We rename it to index.php so the server loads it by default
+ARG ADMINER_VERSION
 RUN wget https://github.com/vrana/adminer/releases/download/v${ADMINER_VERSION}/adminer-${ADMINER_VERSION}.php -O /var/www/html/index.php
 
 # Ensure proper permissions
@@ -1964,8 +2009,9 @@ RUN chown -R www-data:www-data /var/www/html
 # Set the working directory
 WORKDIR /var/www/html
 
-# Expose port 8080
-EXPOSE 8080
+# Expose the internal port (default 8080) dynamically injected at build time
+ARG ADMINER_PORT=8080
+EXPOSE ${ADMINER_PORT}
 
 # Default command executed as PID 1 via the entrypoint's 'exec "$@"'
 # -S 0.0.0.0:${ADMINER_PORT}: Starts the PHP built-in web server on the dynamic port.
@@ -1983,6 +2029,7 @@ services:
       context: ./requirements/bonus/adminer
       args:
         - ADMINER_VERSION=${ADMINER_VERSION}
+        - ADMINER_PORT=${ADMINER_PORT}
     image: adminer:inception-v1
     container_name: adminer
     restart: unless-stopped
@@ -2024,11 +2071,11 @@ If you can log in and see your WordPress tables (wp_users, wp_posts, etc.), Admi
 Arcane is a modern, lightweight, and high-performance Docker management interface built with Go and SvelteKit. It allows you to monitor your Inception infrastructure, view logs in real-time, and manage containers through a sleek web interface.
 
 First, we need to generate two new secrets using OpenSSL. We use long random strings because they are cryptographically secure and, unlike passwords, you will never need to type them manually:
-```bash
+```sh
 openssl rand -hex 32 > ~/inception/secrets/arc_encryption_key.txt
 ```
 
-```bash
+```sh
 openssl rand -hex 32 > ~/inception/secrets/arc_jwt_secret.txt
 ```
 
@@ -2041,7 +2088,7 @@ ARCANE_HOST_PORT=3552
 ```
 
 Now, create the necessary directories for this service:
-```bash
+```sh
 mkdir -p ~/inception/srcs/requirements/bonus/arcane/tools
 ```
 
@@ -2052,7 +2099,7 @@ Update the following line of your `Makefile` to include the Arcane data director
 
 It's time to create the Arcane `Dockerfile`:
 
-```bash
+```sh
 touch ~/inception/srcs/requirements/bonus/arcane/Dockerfile
 ```
 
@@ -2061,9 +2108,6 @@ Copy and paste the following code in it:
 ```dockerfile
 # Use Debian Bookworm as the base image
 FROM debian:12
-
-# Define the version argument (passed from docker-compose.yml)
-ARG ARCANE_VERSION
 
 # Update system and install required base utilities
 RUN apt-get update && apt-get install -y \
@@ -2075,6 +2119,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Download the pre-compiled Linux AMD64 binary for the specific version
+ARG ARCANE_VERSION
 RUN curl -fsSL https://github.com/getarcaneapp/arcane/releases/download/v${ARCANE_VERSION}/arcane_linux_amd64 -o arcane \
     && chmod +x arcane
 
@@ -2082,8 +2127,9 @@ RUN curl -fsSL https://github.com/getarcaneapp/arcane/releases/download/v${ARCAN
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose the default Arcane port
-EXPOSE 3552
+# Expose the internal port (default 3552) dynamically injected at build time
+ARG ARCANE_PORT=3552
+EXPOSE ${ARCANE_PORT}
 
 # Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
@@ -2094,13 +2140,13 @@ CMD ["./arcane"]
 
 Arcane also needs an `entrypoint.sh` script:
 
-```bash
+```sh
 touch ~/inception/srcs/requirements/bonus/arcane/tools/entrypoint.sh
 ```
 
 Copy and paste the following code in it:
 
-```bash
+```sh
 #!/bin/sh
 
 # Stops the script immediately if any command fails
@@ -2130,6 +2176,7 @@ services:
       context: ./requirements/bonus/arcane
       args:
         - ARCANE_VERSION=${ARCANE_VERSION}
+        - ARCANE_PORT=${ARCANE_PORT}
     image: arcane:inception-v1
     container_name: arcane
     restart: unless-stopped
@@ -2180,7 +2227,7 @@ Source: https://getarcane.app/docs
 While Arcane is now up and running, it currently has unrestricted read and write access to the host's Docker socket (`/var/run/docker.sock`) — a major security risk if the container gets compromised. To enforce the principle of least privilege, we will secure our infrastructure by implementing a socket proxy using `HAProxy`.
 
 Let's create the structure:
-```bash
+```sh
 mkdir -p ~/inception/srcs/requirements/bonus/haproxy/conf
 ```
 
@@ -2193,7 +2240,7 @@ HAPROXY_PORT=2375
 
 Create the `Dockerfile`:
 
-```bash
+```sh
 touch ~/inception/srcs/requirements/bonus/haproxy/Dockerfile
 ```
 
@@ -2215,8 +2262,9 @@ COPY conf/haproxy.cfg /usr/local/etc/haproxy/haproxy.cfg
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose the proxy port
-EXPOSE 2375
+# Expose the internal port (default 2375) dynamically injected at build time
+ARG HAPROXY_PORT=2375
+EXPOSE ${HAPROXY_PORT}
 
 # Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
@@ -2229,7 +2277,7 @@ CMD ["haproxy", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
 ```
 
 Then, create the `haproxy.cfg` configuration file:
-```bash
+```sh
 touch ~/inception/srcs/requirements/bonus/haproxy/conf/haproxy.cfg
 ```
 
@@ -2289,7 +2337,7 @@ backend docker-socket
 
 Next, let's update Arcane's `entrypoint.sh` script to route its Docker API calls through our new proxy instead of the default local socket. By setting the `DOCKER_HOST` environment variable, we instruct the Docker client inside Arcane to communicate strictly over TCP with HAProxy. Insert the following conditional block right after loading the secrets, and just before the exec command:
 
-```bash
+```sh
     # 2. Configures the Docker client to talk to HAProxy instead of the local socket
     if [ -n "$HAPROXY_HOST" ]; then
         export DOCKER_HOST="tcp://${HAPROXY_HOST}:${HAPROXY_PORT}"
@@ -2326,6 +2374,8 @@ services:
   haproxy:
     build:
       context: ./requirements/bonus/haproxy
+      args:
+        - HAPROXY_PORT=${HAPROXY_PORT}
     image: haproxy:inception-v1
     container_name: haproxy
     restart: unless-stopped

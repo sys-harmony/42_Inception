@@ -13,8 +13,11 @@ COPY conf/vsftpd.conf /etc/vsftpd.conf
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose FTP port and passive mode range
-EXPOSE 21 40000-40005
+# Expose the internal ports (default 21, 40000-40005) dynamically injected at build time
+ARG FTP_PORT=21
+ARG FTP_PASV_MIN_PORT=40000
+ARG FTP_PASV_MAX_PORT=40005
+EXPOSE ${FTP_PORT} ${FTP_PASV_MIN_PORT}-${FTP_PASV_MAX_PORT}
 
 # Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

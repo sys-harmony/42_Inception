@@ -16,9 +16,10 @@ COPY conf/nginx.conf /etc/nginx/nginx.conf
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose the default NGINX port (Documentation purpose only)
+# Expose the internal port (default 443) dynamically injected at build time
 # The actual listening port is dynamically injected at runtime via the entrypoint.sh script
-EXPOSE 443
+ARG NGINX_PORT=443
+EXPOSE ${NGINX_PORT}
 
 # Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

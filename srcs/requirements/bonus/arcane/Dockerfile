@@ -1,9 +1,6 @@
 # Use Debian Bookworm as the base image
 FROM debian:12
 
-# Define the version argument (passed from docker-compose.yml)
-ARG ARCANE_VERSION
-
 # Update system and install required base utilities
 RUN apt-get update && apt-get install -y \
     curl \
@@ -14,6 +11,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Download the pre-compiled Linux AMD64 binary for the specific version
+ARG ARCANE_VERSION
 RUN curl -fsSL https://github.com/getarcaneapp/arcane/releases/download/v${ARCANE_VERSION}/arcane_linux_amd64 -o arcane \
     && chmod +x arcane
 
@@ -21,8 +19,9 @@ RUN curl -fsSL https://github.com/getarcaneapp/arcane/releases/download/v${ARCAN
 COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose the default Arcane port
-EXPOSE 3552
+# Expose the internal port (default 3552) dynamically injected at build time
+ARG ARCANE_PORT=3552
+EXPOSE ${ARCANE_PORT}
 
 # Set the entrypoint script to handle setup and environment preparation at container start
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

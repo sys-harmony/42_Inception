@@ -11,6 +11,8 @@ services:
   mariadb:
     build:
       context: ./requirements/mariadb
+      args:
+        - MARIADB_PORT=${MARIADB_PORT}
     image: mariadb:inception-v1
     container_name: mariadb
     restart: unless-stopped
@@ -47,6 +49,8 @@ services:
   wordpress:
     build:
       context: ./requirements/wordpress
+      args:
+        - WP_PORT=${WP_PORT}
     image: wordpress:inception-v1
     container_name: wordpress
     restart: unless-stopped
@@ -96,6 +100,8 @@ services:
   nginx:
     build:
       context: ./requirements/nginx
+      args:
+        - NGINX_PORT=${NGINX_PORT}
     image: nginx:inception-v1
     container_name: nginx
     restart: unless-stopped
@@ -129,6 +135,8 @@ services:
   redis:
     build:
       context: ./requirements/bonus/redis
+      args:
+        - REDIS_PORT=${REDIS_PORT}
     image: redis:inception-v1
     container_name: redis
     restart: unless-stopped
@@ -156,6 +164,10 @@ services:
   ftp:
     build:
       context: ./requirements/bonus/ftp
+      args:
+        - FTP_PORT=${FTP_PORT}
+        - FTP_PASV_MIN_PORT=${FTP_PASV_MIN_PORT}
+        - FTP_PASV_MAX_PORT=${FTP_PASV_MAX_PORT}
     image: ftp:inception-v1
     container_name: ftp
     restart: unless-stopped
@@ -182,6 +194,8 @@ services:
   static:
     build:
       context: ./requirements/bonus/static
+      args:
+        - STATIC_PORT=${STATIC_PORT}
     image: static:inception-v1
     container_name: static
     restart: unless-stopped
@@ -198,6 +212,7 @@ services:
       context: ./requirements/bonus/adminer
       args:
         - ADMINER_VERSION=${ADMINER_VERSION}
+        - ADMINER_PORT=${ADMINER_PORT}
     image: adminer:inception-v1
     container_name: adminer
     restart: unless-stopped
@@ -217,6 +232,7 @@ services:
       context: ./requirements/bonus/arcane
       args:
         - ARCANE_VERSION=${ARCANE_VERSION}
+        - ARCANE_PORT=${ARCANE_PORT}
     image: arcane:inception-v1
     container_name: arcane
     restart: unless-stopped
@@ -241,6 +257,8 @@ services:
   haproxy:
     build:
       context: ./requirements/bonus/haproxy
+      args:
+        - HAPROXY_PORT=${HAPROXY_PORT}
     image: haproxy:inception-v1
     container_name: haproxy
     restart: unless-stopped

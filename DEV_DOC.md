@@ -2680,31 +2680,63 @@ mkdir -p ~/.ssh
 chmod 700 ~/.ssh
 ```
 
-### Step 2: Transfer your SSH Key from Host to VM
+### Step 2: Authenticate with your SSH Key
+
+To connect to the 42 Vogsphere, your VM needs access to your authorized SSH key. You can achieve this using a secure "Forwarding" method (recommended) or a manual "Copy" method.
+
+#### Option A: SSH Agent Forwarding
+
+This is the cleanest method because your private key **never leaves your host machine**. The VM simply "borrows" your host's authentication agent to talk to Vogsphere.
+
+**On your Host Machine:** Add your key to the SSH agent:
+
+```sh
+ssh-add ~/.ssh/id_rsa
+```
+
+In **VSCode**, open the command palette (`Ctrl+Shift+P` / `Cmd+Shift+P`), type `SSH: Open SSH Configuration File`. Select your user's config file (e.g., `~/.ssh/config`) and add `ForwardAgent yes` in the corresponding block as follows:
+
+```ssh-config
+Host inception
+    HostName <your_vm_ip_or_localhost>
+    User <yourlogin>
+    Port <22_or_2222>
+    ForwardAgent yes
+```
+
+Now, in **VSCode**: Close the remote connection and reconnect to the host. Then, with its terminal, verify that the agent is active:
+
+```sh
+ssh-add -l
+```
+
+If you see your key listed, the VM is now authorized to use it for Vogsphere.
+
+#### Option B: Manual Key Transfer
+
+If you prefer your VM to be independent, you can copy your key files directly onto the virtual disk.
 
 Open a terminal on your physical Host Machine (your Mac/PC) to securely copy your keys to the VM using `scp` (Secure Copy Protocol). The command depends on your VirtualBox network configuration:
 
-**Option A: VirtualBox in NAT Mode**
-Since NAT mode requires port forwarding, you must specify the forwarded SSH port (usually `2222`). Assuming this is a dedicated VM for this project, you can copy the keys using their default names.
+* **For NAT Mode:**
+  Since NAT mode requires port forwarding, you must specify the forwarded SSH port (usually `2222`). Assuming this is a dedicated VM for this project, you can copy the keys using their default names.
 
-```sh
-scp -P 2222 ~/.ssh/id_rsa yourlogin@localhost:~/.ssh/
-```
-```sh
-scp -P 2222 ~/.ssh/id_rsa.pub yourlogin@localhost:~/.ssh/
-```
+  ```sh
+  scp -P 2222 ~/.ssh/id_rsa yourlogin@localhost:~/.ssh/
+  ```
+  ```sh
+  scp -P 2222 ~/.ssh/id_rsa.pub yourlogin@localhost:~/.ssh/
+  ```
 
-**Option B: VirtualBox in Bridged Mode**
-In Bridged mode, you communicate directly with the VM's local IP address (find it by running `hostname -I` in the VM).
+* **For Bridged Mode:**
+  In Bridged mode, you communicate directly with the VM's local IP address (find it by running `hostname -I` in the VM).
 
-```sh
-scp ~/.ssh/id_rsa yourlogin@<VM_IP_ADDRESS>:~/.ssh/
-```
-```sh
-scp ~/.ssh/id_rsa.pub yourlogin@<VM_IP_ADDRESS>:~/.ssh/
-```
-
-### Step 3: Secure the Keys inside the VM
+  ```sh
+  scp ~/.ssh/id_rsa yourlogin@<VM_IP_ADDRESS>:~/.ssh/
+  ```
+  ```sh
+  scp ~/.ssh/id_rsa.pub yourlogin@<VM_IP_ADDRESS>:~/.ssh/
+  ```
 
 Return to the terminal **inside your VM**. SSH is extremely strict about file permissions. If your private key is accessible to anyone else, SSH will refuse to use it. Lock down the files:
 
@@ -2715,7 +2747,7 @@ chmod 600 ~/.ssh/id_rsa
 chmod 644 ~/.ssh/id_rsa.pub
 ```
 
-### Step 4: Test the Vogsphere Connection
+### Step 3: Test the Vogsphere Connection
 
 Verify that your VM is now recognized by the 42 servers. Run the following command (adjust the domain to your specific campus if necessary):
 
@@ -2724,7 +2756,7 @@ ssh -T git@vogsphere.42maville.fr
 ```
 If you see a message saying `"Welcome <yourlogin>!"`, your SSH connection is successfully configured.
 
-### Step 5: Configure the Git Remote
+### Step 4: Configure the Git Remote
 
 If your project currently points to a personal GitHub repository, you must detach it and link it to your official 42 Vogsphere repository.
 Remove the old remote (if any):
@@ -2745,7 +2777,7 @@ Verify that the remote was added correctly:
 git remote -v
 ```
 
-### Step 6: Enforce the master Branch
+### Step 5: Enforce the master Branch
 
 The Vogsphere server **only** accepts pushes to the `master` branch. Modern Git versions often use `main` by default. If you push `main`, the server will ignore it.
 Check your current branch name:
@@ -2760,7 +2792,7 @@ If your branch is named `main` (or anything else), rename it to `master`:
 git branch -m master
 ```
 
-### Step 7: Final Commit and Push
+### Step 6: Final Commit and Push
 
 You are now ready to send your code. Stage your files, create your final commit, and push to the server:
 

@@ -2098,7 +2098,7 @@ services:
     logging: *default-logging
 ```
 
-Do not forget the VirtualBox rule if you chose the NAT mode:
+Do not forget the VirtualBox rule if you chose the **NAT mode**:
 
 | Rule Name    | Protocol | Host IP   | Host Port | Guest IP | Guest Port |
 |--------------|----------|-----------|-----------|----------|------------|
@@ -2242,7 +2242,7 @@ services:
     logging: *default-logging
 ```
 
-If you chose NAT mode, add the following VirtualBox NAT Rule:
+If you chose **NAT mode**, add the following VirtualBox NAT rule:
 
 | Rule Name    | Protocol | Host IP   | Host Port | Guest IP | Guest Port |
 |--------------|----------|-----------|-----------|----------|------------|

@@ -2,7 +2,7 @@
 FROM debian:12
 
 # Prevent interactive prompts during package installation
-ENV DEBIAN_FRONTEND=noninteractive
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Update and install PHP-FPM, MySQL extensions, and required tools
 RUN apt-get update && apt-get install -y \

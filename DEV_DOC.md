@@ -429,6 +429,8 @@ secrets/
 .env
 ```
 
+> Evaluation Tip: Because your `.env` file and the `secrets/` directory are properly ignored by Git for security reasons, they will be missing when you clone your repository during your defense. It is highly recommended to keep a pre-configured .env file and a ready-to-use secrets/ folder on hand (e.g., on your Desktop) so you can simply drag and drop them into your project during the evaluation. Otherwise, you will need to recreate them manually from scratch (using the .env.example and the instructions in Section 8).
+
 Now, create the `.env` file inside the `srcs` directory:
 ```sh
 touch ~/inception/srcs/.env
@@ -575,7 +577,6 @@ services:
       - WP_USER
       - WP_USER_EMAIL
       - NGINX_HOST_PORT
-      - REDIS_PORT
     secrets:
       - db_password
       - wp_admin_password
@@ -801,7 +802,7 @@ And copy the following in it:
 FROM debian:12
 
 # Prevent interactive prompts during package installation
-ENV DEBIAN_FRONTEND=noninteractive
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Update the system and install MariaDB server and client
 RUN apt-get update && apt-get install -y \
@@ -921,7 +922,7 @@ And copy the following in it:
 FROM debian:12
 
 # Prevent interactive prompts during package installation
-ENV DEBIAN_FRONTEND=noninteractive
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Update and install PHP-FPM, MySQL extensions, and required tools
 RUN apt-get update && apt-get install -y \
@@ -1125,7 +1126,7 @@ And copy the following in it:
 FROM debian:12
 
 # Prevent interactive prompts during package installation
-ENV DEBIAN_FRONTEND=noninteractive
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Install NGINX, OpenSSL (certificates), and wget (Docker healthcheck)
 RUN apt-get update && apt-get install -y \
@@ -1356,7 +1357,7 @@ Copy and paste the following configuration in it:
 FROM debian:12
 
 # Prevent interactive prompts during package installation
-ENV DEBIAN_FRONTEND=noninteractive
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Install redis-server
 RUN apt-get update && apt-get install -y \
@@ -1435,7 +1436,7 @@ services:
     # ... other configs
     environment:
       # ... other variables
-      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_PORT
     secrets:
       # ... other secrets
       - redis_password
@@ -1701,7 +1702,7 @@ Copy and paste the following configuration:
 FROM debian:12
 
 # Prevent interactive prompts during package installation
-ENV DEBIAN_FRONTEND=noninteractive
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Install vsftpd (Very Secure FTP Daemon)
 RUN apt-get update && apt-get install -y \
@@ -1943,7 +1944,7 @@ Copy and paste the following code in it:
 FROM debian:12
 
 # Prevent interactive prompts during package installation
-ENV DEBIAN_FRONTEND=noninteractive
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Install lighttpd and clean up apt cache to keep the image slim
 RUN apt-get update && apt-get install -y \
@@ -2142,7 +2143,7 @@ Copy and paste the following code in it:
 FROM debian:12
 
 # Prevent interactive prompts during package installation
-ENV DEBIAN_FRONTEND=noninteractive
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Install PHP, the PHP-MySQL extension and wget (to download Adminer)
 RUN apt-get update && apt-get install -y \
@@ -2179,7 +2180,7 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["php"]
 ```
 
-Now it's time to create the `entrypoint.sh` file for Redis:
+Now it's time to create the `entrypoint.sh` file for Adminer:
 
 ```sh
 touch ~/inception/srcs/requirements/bonus/adminer/tools/entrypoint.sh
@@ -2306,7 +2307,7 @@ Copy and paste the following code in it:
 FROM debian:12
 
 # Prevent interactive prompts during package installation
-ENV DEBIAN_FRONTEND=noninteractive
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Update system and install required base utilities
 RUN apt-get update && apt-get install -y \
@@ -2424,6 +2425,12 @@ volumes:
       device: /home/yourlogin/data/arcane
 ```
 
+If you chose NAT mode, add the following VirtualBox NAT Rule:
+
+| Rule Name    | Protocol | Host IP   | Host Port | Guest IP | Guest Port |
+|--------------|----------|-----------|-----------|----------|------------|
+| **Arcane**      | TCP      | 127.0.0.1 | 3552      |          | 3552         |
+
 Rebuild your infrastructure using `make re` and open the following URL — make sure to use HTTP (not HTTPS):
 
 http://yourlogin.42.fr:3552
@@ -2436,7 +2443,7 @@ Source: https://getarcane.app/docs
 
 While Arcane is now up and running, it currently has unrestricted read and write access to the host's Docker socket (`/var/run/docker.sock`) — a major security risk if the container gets compromised. To enforce the principle of least privilege, we will secure our infrastructure by implementing a socket proxy using `HAProxy`.
 
-To achieve this, we will move away from the default version of HAProxy bundled with Debian 12. While stable, the legacy 2.6 release proved too rigid for the modern requirements of the Docker API and Arcane's interactive terminal. By compiling and deploying **HAProxy 3.2 LTS**, we can implement a truly "intelligent" proxy that inspects every request, selectively upgrading connections to bi-directional tunnels only when a terminal is requested, while maintaining a strict "Zero Trust" policy for everything else.
+To achieve this, we will move away from the default version of HAProxy bundled with Debian 12. While stable, the legacy 2.6 release proved too rigid for the modern requirements of the Docker API and Arcane's interactive terminal. By installing **HAProxy 3.2 LTS**, we can implement a truly "intelligent" proxy that inspects every request, selectively upgrading connections to bi-directional tunnels only when a terminal is requested, while maintaining a strict "Zero Trust" policy for everything else.
 
 Let's create the structure:
 ```sh
@@ -2464,7 +2471,7 @@ And copy the following in it:
 FROM debian:12
 
 # Prevent interactive prompts during package installation
-ENV DEBIAN_FRONTEND=noninteractive
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Install prerequisites for adding the official HAProxy repository
 RUN apt-get update && apt-get install -y \

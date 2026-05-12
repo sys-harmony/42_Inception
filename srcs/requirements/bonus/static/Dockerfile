@@ -2,7 +2,7 @@
 FROM debian:12
 
 # Prevent interactive prompts during package installation
-ENV DEBIAN_FRONTEND=noninteractive
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Install lighttpd and clean up apt cache to keep the image slim
 RUN apt-get update && apt-get install -y \

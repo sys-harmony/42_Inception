@@ -2,7 +2,7 @@
 FROM debian:12
 
 # Prevent interactive prompts during package installation
-ENV DEBIAN_FRONTEND=noninteractive
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Install NGINX, OpenSSL (certificates), and wget (Docker healthcheck)
 RUN apt-get update && apt-get install -y \

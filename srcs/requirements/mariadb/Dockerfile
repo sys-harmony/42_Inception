@@ -2,7 +2,7 @@
 FROM debian:12
 
 # Prevent interactive prompts during package installation
-ENV DEBIAN_FRONTEND=noninteractive
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Update the system and install MariaDB server and client
 RUN apt-get update && apt-get install -y \

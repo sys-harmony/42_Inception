@@ -2,7 +2,7 @@
 FROM debian:12
 
 # Prevent interactive prompts during package installation
-ENV DEBIAN_FRONTEND=noninteractive
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Install PHP, the PHP-MySQL extension and wget (to download Adminer)
 RUN apt-get update && apt-get install -y \

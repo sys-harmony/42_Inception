@@ -1,6 +1,9 @@
 # Use Debian Bookworm as the base image
 FROM debian:12
 
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
 # Install redis-server
 RUN apt-get update && apt-get install -y \
 	redis-server \

@@ -1,6 +1,9 @@
 # Use Debian Bookworm as the base image
 FROM debian:12
 
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
 # Update system and install required base utilities
 RUN apt-get update && apt-get install -y \
     curl \
@@ -11,7 +14,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Download the pre-compiled Linux AMD64 binary for the specific version
-ARG ARCANE_VERSION
+ARG ARCANE_VERSION=1.18.1
 RUN curl -fsSL https://github.com/getarcaneapp/arcane/releases/download/v${ARCANE_VERSION}/arcane_linux_amd64 -o arcane \
     && chmod +x arcane
 

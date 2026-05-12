@@ -1355,6 +1355,9 @@ Copy and paste the following configuration in it:
 # Use Debian Bookworm as the base image
 FROM debian:12
 
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
 # Install redis-server
 RUN apt-get update && apt-get install -y \
 	redis-server \
@@ -1697,6 +1700,9 @@ Copy and paste the following configuration:
 # Use Debian Bookworm as the base image
 FROM debian:12
 
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
 # Install vsftpd (Very Secure FTP Daemon)
 RUN apt-get update && apt-get install -y \
 	vsftpd \
@@ -1936,6 +1942,9 @@ Copy and paste the following code in it:
 # Use Debian Bookworm as the base image
 FROM debian:12
 
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
 # Install lighttpd and clean up apt cache to keep the image slim
 RUN apt-get update && apt-get install -y \
 	lighttpd \
@@ -2132,6 +2141,9 @@ Copy and paste the following code in it:
 # Use Debian Bookworm as the base image for consistency
 FROM debian:12
 
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
 # Install PHP, the PHP-MySQL extension and wget (to download Adminer)
 RUN apt-get update && apt-get install -y \
 	php8.2 php8.2-mysql \
@@ -2143,7 +2155,7 @@ RUN mkdir -p /var/www/html
 
 # Download the specific version of Adminer directly into the web directory
 # We rename it to index.php so the server loads it by default
-ARG ADMINER_VERSION
+ARG ADMINER_VERSION=5.4.2
 RUN wget https://github.com/vrana/adminer/releases/download/v${ADMINER_VERSION}/adminer-${ADMINER_VERSION}.php -O /var/www/html/index.php
 
 # Ensure proper permissions
@@ -2293,6 +2305,9 @@ Copy and paste the following code in it:
 # Use Debian Bookworm as the base image
 FROM debian:12
 
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
 # Update system and install required base utilities
 RUN apt-get update && apt-get install -y \
     curl \
@@ -2303,7 +2318,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Download the pre-compiled Linux AMD64 binary for the specific version
-ARG ARCANE_VERSION
+ARG ARCANE_VERSION=1.18.1
 RUN curl -fsSL https://github.com/getarcaneapp/arcane/releases/download/v${ARCANE_VERSION}/arcane_linux_amd64 -o arcane \
     && chmod +x arcane
 
@@ -2421,6 +2436,8 @@ Source: https://getarcane.app/docs
 
 While Arcane is now up and running, it currently has unrestricted read and write access to the host's Docker socket (`/var/run/docker.sock`) — a major security risk if the container gets compromised. To enforce the principle of least privilege, we will secure our infrastructure by implementing a socket proxy using `HAProxy`.
 
+To achieve this, we will move away from the default version of HAProxy bundled with Debian 12. While stable, the legacy 2.6 release proved too rigid for the modern requirements of the Docker API and Arcane's interactive terminal. By compiling and deploying **HAProxy 3.2 LTS**, we can implement a truly "intelligent" proxy that inspects every request, selectively upgrading connections to bi-directional tunnels only when a terminal is requested, while maintaining a strict "Zero Trust" policy for everything else.
+
 Let's create the structure:
 ```sh
 mkdir -p ~/inception/srcs/requirements/bonus/haproxy/{conf,tools}
@@ -2429,6 +2446,7 @@ mkdir -p ~/inception/srcs/requirements/bonus/haproxy/{conf,tools}
 Add these configuration variables to your .env file:
 ```env
 # HAPROXY
+HAPROXY_VERSION=3.2.19
 HAPROXY_HOST=haproxy
 HAPROXY_PORT=2375
 ```
@@ -2445,10 +2463,30 @@ And copy the following in it:
 # Use Debian Bookworm as the base image
 FROM debian:12
 
-# Update system and install HAProxy
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install prerequisites for adding the official HAProxy repository
 RUN apt-get update && apt-get install -y \
-	haproxy \
-	&& rm -rf /var/lib/apt/lists/*
+    curl gnupg ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Register the HAProxy official repository (3.2 LTS)
+# HAProxy 3.2 is required: Debian 12 ships 2.6 which strips hop-by-hop headers
+# (Connection, Upgrade) even when re-injected via http-request rules, making
+# Docker's exec/attach TCP upgrade impossible in HTTP mode.
+RUN curl https://haproxy.debian.net/haproxy-archive-keyring.gpg \
+        --create-dirs --output /etc/apt/keyrings/haproxy-archive-keyring.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/haproxy-archive-keyring.gpg] \
+        https://haproxy.debian.net bookworm-backports-3.2 main" \
+        > /etc/apt/sources.list.d/haproxy.list
+
+# Install the pinned HAProxy version
+# The '*' suffix matches the Debian revision suffix (e.g. 3.2.19-1~bpo12+1)
+ARG HAPROXY_VERSION=3.2.19
+RUN apt-get update && apt-get install -y \
+    "haproxy=${HAPROXY_VERSION}*" \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy our custom security configuration
 COPY conf/haproxy.cfg /usr/local/etc/haproxy/haproxy.cfg
@@ -2466,7 +2504,7 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Default command executed as PID 1 via the entrypoint's 'exec "$@"'
 # -f: Specifies the path to the configuration file.
-# By default, HAProxy runs in the foreground unless '-D' is specified, 
+# By default, HAProxy runs in the foreground unless '-D' is specified,
 # ensuring the container remains active and manageable by Docker.
 CMD ["haproxy", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
 ```
@@ -2521,58 +2559,78 @@ global
     log stdout format raw local0
 
 defaults
-    # HAProxy will operate at Layer 7 (HTTP) to allow path-based filtering and deep inspection.
+    # HAProxy operates at Layer 7 (HTTP) to allow path-based filtering and deep inspection
     mode http
-    
-    # Standard timeout configurations for connection, client, and server response.
+
+    # Standard timeout configurations for connection, client, and server response
     timeout connect 5000ms
-    timeout client 50000ms
-    timeout server 50000ms
-    
-    # Inherit logging configuration from the global section.
+    timeout client  50000ms
+    timeout server  50000ms
+
+    # Extended timeout for tunneled connections (exec/attach interactive sessions)
+    timeout tunnel 1h
+
+    # Inherit logging configuration from the global section
     log global
-    
-    # Generates rich logs for HTTP requests, including paths, status codes, and timings.
+
+    # Generates rich logs for HTTP requests, including paths, status codes, and timings
     option httplog
 
 frontend docker-api
-    # Listens on all interfaces on the port dynamically injected by the entrypoint.
+    # Listens on all interfaces on the port dynamically injected by the entrypoint
     bind *:2375
-    
+
     # --- ACLs: define what Arcane is allowed to reach ---
 
-    # Safe read-only endpoints (no writes, no registry lookups)
+    # Safe read-only endpoints
     acl is_read_only path_reg ^/(v[0-9.]+/)?(version|info|_ping|events|images/json|containers/json|networks|volumes)$
-    
-    # Detailed container inspection (Required for Arcane to view logs, stats, and details)
-    acl is_container_inspect path_reg ^/(v[0-9.]+/)?containers/[a-zA-Z0-9_.:-]+/(json|logs|stats|top)$
+
+    # Detailed container inspection (required for Arcane to view logs, stats, and details)
+    acl is_container_inspect path_reg ^/(v[0-9.]+/)?containers/[a-zA-Z0-9_.-]+/(json|logs|stats|top)$
 
     # Container lifecycle control — no DELETE
-    acl is_container_action path_reg ^/(v[0-9.]+/)?containers/[a-zA-Z0-9_.:-]+/(start|stop|restart|kill|attach|wait)$
+    acl is_container_action path_reg ^/(v[0-9.]+/)?containers/[a-zA-Z0-9_.-]+/(start|stop|restart|kill|wait|attach)$
 
     # Exec API: create and run commands inside containers
-    acl is_exec path_reg ^/(v[0-9.]+/)?(containers/[a-zA-Z0-9_.:-]+/exec|exec/[a-zA-Z0-9_.:-]+/(start|json))$
+    acl is_exec path_reg ^/(v[0-9.]+/)?(containers/[a-zA-Z0-9_.-]+/exec|exec/[a-zA-Z0-9_.-]+/(start|json))$
 
     # High-risk daemon-level endpoints
     acl forbidden_paths path_reg ^/(v[0-9.]+/)?(build|swarm|system|nodes|services|tasks|plugins|configs|secrets|auth|commit)$
 
     # --- Rules: deny > allow > deny all (zero-trust) ---
-    http-request deny if forbidden_paths
+    http-request deny  if forbidden_paths
     http-request allow if is_read_only
     http-request allow if is_container_inspect
     http-request allow if is_container_action
     http-request allow if is_exec
-    http-request deny 
+    http-request deny
 
-    # Route all authorized and sanitized traffic to the backend.
+    # Route all authorized and sanitized traffic to the backend
     default_backend docker-socket
 
 backend docker-socket
+    # Identifies requests that require an HTTP → TCP protocol upgrade
+    acl is_terminal path_reg ^/(v[0-9.]+/)?(exec/[a-zA-Z0-9_.-]+/start|containers/[a-zA-Z0-9_.-]+/attach)$
+
+    # Inject upgrade headers so Docker switches its connection to raw TCP stream mode.
+    # HAProxy 3.2 correctly preserves these hop-by-hop headers when set via http-request
+    # rules, unlike HAProxy 2.6 which stripped them before forwarding to the backend.
+    http-request set-header Connection "Upgrade" if is_terminal
+    http-request set-header Upgrade    "tcp"     if is_terminal
+
+    # Safety net: if Docker responds 200 instead of 101 for any reason, force the
+    # status to 101 Switching Protocols to trigger HAProxy's internal tunnel mode.
+    # In practice Docker responds with 101 directly when it receives the Upgrade headers.
+    http-response set-status 101 reason "Switching Protocols" if is_terminal { status 200 }
+
     # 'unix@' tells HAProxy to use a Unix socket instead of TCP.
-    # Note: The 'check' option is omitted here because health checks on Docker Unix sockets
-    # require specific HTTP probes, otherwise HAProxy might falsely mark the backend as DOWN.
+    # The 'check' option is omitted: health checks on Unix sockets require specific
+    # HTTP probes; omitting it avoids falsely marking the backend as DOWN.
     server docker unix@/var/run/docker.sock
+
 ```
+
+Ensure that your haproxy.cfg file ends with a final empty line (a trailing newline). This line must be completely blank, containing no spaces or tabs. HAProxy's configuration parser may fail to read the last directive or even crash during startup if this terminating newline is missing.
 
 Next, let's update Arcane's `entrypoint.sh` script to route its Docker API calls through our new proxy instead of the default local socket. By setting the `DOCKER_HOST` environment variable, we instruct the Docker client inside Arcane to communicate strictly over TCP with HAProxy. Replace the file content with the following:
 
@@ -2645,6 +2703,7 @@ services:
     build:
       context: ./requirements/bonus/haproxy
       args:
+        - HAPROXY_VERSION
         - HAPROXY_PORT
     image: haproxy:inception-v1
     container_name: haproxy

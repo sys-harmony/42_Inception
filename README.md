@@ -2,6 +2,8 @@
 
 # Inception
 
+![Score: 125/100](https://img.shields.io/badge/Score-125%2F100-00b4ab?style=for-the-badge&logo=42&logoColor=white)
+
 ## Description
 The Inception project aims to broaden our knowledge of system administration by using Docker. The goal is to virtualize an entire infrastructure using Docker Compose, creating multiple interacting services within custom containers, all running under a single Debian 12 base image.
 
